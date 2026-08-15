@@ -91,8 +91,8 @@ class GeminiClientWrapper:
                     except Exception as e:
                         last_exception = e
                         err_str = str(e)
-                        if any(k in err_str for k in ["404", "429", "NOT_FOUND", "RESOURCE_EXHAUSTED", "Quota exceeded", "not available"]):
-                            time.sleep(1.0)
+                        if any(k in err_str for k in ["404", "429", "500", "502", "503", "504", "NOT_FOUND", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "Quota exceeded", "not available"]):
+                            time.sleep(2.0)
                             continue
                         raise e
 
