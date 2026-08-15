@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# Archaeologist Storage & DB
+*.db
+*.bin
+qdrant_storage/
+qdrant_storage_local/
+.env
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
