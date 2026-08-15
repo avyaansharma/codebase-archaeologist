@@ -7,6 +7,10 @@ from archaeologist.agent.nodes.follow_links import follow_links_node
 from archaeologist.agent.nodes.verify import verify_node
 from archaeologist.agent.nodes.synthesize import synthesize_node
 
+def advance_sub_question_node(state: AgentState) -> dict:
+    idx = state.get("current_sub_question_index", 0) + 1
+    return {"current_sub_question_index": idx}
+
 def increment_retry_node(state: AgentState) -> dict:
     retries = state.get("retry_count", 0)
     print(f"Agent: Verification failed. Incrementing retry count to {retries + 1}...")
@@ -20,6 +24,7 @@ workflow.add_node("decompose", decompose_node)
 workflow.add_node("plan", plan_node)
 workflow.add_node("search", search_node)
 workflow.add_node("follow_links", follow_links_node)
+workflow.add_node("advance_sub_question", advance_sub_question_node)
 workflow.add_node("verify", verify_node)
 workflow.add_node("increment_retry", increment_retry_node)
 workflow.add_node("synthesize", synthesize_node)
@@ -27,13 +32,30 @@ workflow.add_node("synthesize", synthesize_node)
 # Set entry point
 workflow.set_entry_point("decompose")
 
-# Standard transitions
+# Transitions
 workflow.add_edge("decompose", "plan")
 workflow.add_edge("plan", "search")
 workflow.add_edge("search", "follow_links")
-workflow.add_edge("follow_links", "verify")
+workflow.add_edge("follow_links", "advance_sub_question")
 
-# Conditional transitions from verification check
+# Sub-question loop router (§1.1 Fix)
+def sub_question_router(state: AgentState):
+    idx = state.get("current_sub_question_index", 0)
+    sub_qs = state.get("sub_questions", [])
+    if idx < len(sub_qs):
+        return "plan"
+    return "verify"
+
+workflow.add_conditional_edges(
+    "advance_sub_question",
+    sub_question_router,
+    {
+        "plan": "plan",
+        "verify": "verify"
+    }
+)
+
+# Verification router (§1.2 Fix)
 def verification_router(state: AgentState):
     if state.get("verification_passed", True):
         return "synthesize"

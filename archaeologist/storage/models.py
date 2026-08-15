@@ -23,27 +23,32 @@ class PullRequest(SQLModel, table=True):
     title: str
     body: Optional[str] = None
     state: str                                  # open|closed|merged
-    author: str
+    author: str = "unknown"
     created_at: datetime
     merged_at: Optional[datetime] = None
     merge_commit_sha: Optional[str] = None
+    merged_commit_sha: Optional[str] = None
     linked_issue_numbers: List[int] = Field(default_factory=list, sa_column=Column(JSON))
+    linked_commit_shas: List[str] = Field(default_factory=list, sa_column=Column(JSON))
     review_comments: List[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    comments: List[dict] = Field(default_factory=list, sa_column=Column(JSON))
 
 class Issue(SQLModel, table=True):
     number: int = Field(primary_key=True)
     title: str
     body: Optional[str] = None
     state: str
+    author: Optional[str] = "unknown"
     labels: List[str] = Field(default_factory=list, sa_column=Column(JSON))
     created_at: datetime
     closed_at: Optional[datetime] = None
     close_reason: Optional[str] = None          # "completed" | "not_planned" | None
     linked_pr_numbers: List[int] = Field(default_factory=list, sa_column=Column(JSON))
+    linked_commit_shas: List[str] = Field(default_factory=list, sa_column=Column(JSON))
     comments: List[dict] = Field(default_factory=list, sa_column=Column(JSON))
 
 class Chunk(SQLModel, table=True):
-    id: str = Field(primary_key=True)            # uuid4
+    id: str = Field(primary_key=True)            # deterministic uuid5
     source_type: str                              # "commit"|"pr"|"issue"|"thread_summary"
     source_id: str                                 # sha, or "pr#123", "issue#45"
     text: str

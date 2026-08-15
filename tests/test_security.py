@@ -28,6 +28,14 @@ def test_sanitize_file_path_traversal_attack(tmp_path):
     with pytest.raises(ValueError):
         sanitize_file_path(str(base_dir), "../../etc/passwd")
 
+def test_sanitize_file_path_sibling_dir_attack(tmp_path):
+    base_dir = tmp_path / "repo"
+    base_dir.mkdir()
+    sibling_dir = tmp_path / "repo-evil-sibling"
+    sibling_dir.mkdir()
+    with pytest.raises(ValueError):
+        sanitize_file_path(str(base_dir), "../repo-evil-sibling/secret.py")
+
 def test_sanitize_sha():
     valid_sha = "a1b2c3d4e5f60789"
     assert sanitize_sha(valid_sha) == valid_sha

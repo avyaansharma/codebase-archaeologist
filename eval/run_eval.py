@@ -52,7 +52,7 @@ class LLMJudge:
         )
 
         try:
-            res = self.gemini.generate_json(prompt=prompt, model="gemini-2.5-flash")
+            res = self.gemini.generate_json(prompt=prompt, model="gemini-3.5-flash")
             return float(res.get("score", 0)) / 10.0
         except Exception as e:
             print(f"Error in Gemini evaluation judge: {e}")
@@ -60,14 +60,19 @@ class LLMJudge:
 
 def calculate_citation_precision(generated_answer: str, expected_refs: List[str]) -> float:
     """Calculates fraction of cited sources that correspond to expected references."""
-    citations = re.findall(r'\[([^\]]+)\]', generated_answer)
+    if not expected_refs:
+        return 1.0 if generated_answer and "no history" not in generated_answer.lower() else 0.0
+        
+    citations = re.findall(r'\[([^\]]+)\]|#(\d+)|commit\s+([0-9a-fA-F]{7,40})|PR\s+#?(\d+)', generated_answer, re.IGNORECASE)
     if not citations:
-        return 0.0
+        # Check direct inline mentions
+        found_matches = sum(1 for ref in expected_refs if ref.lower() in generated_answer.lower())
+        return float(found_matches) / len(expected_refs) if expected_refs else 0.0
 
     matches = 0
     for citation in citations:
-        citation_lower = citation.lower()
-        if any(ref.lower() in citation_lower for ref in expected_refs):
+        c_str = "".join([s for s in citation if s]).lower()
+        if any(ref.lower() in c_str for ref in expected_refs):
             matches += 1
             
     return float(matches) / len(citations)

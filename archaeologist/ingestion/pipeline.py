@@ -17,17 +17,19 @@ from archaeologist.ingestion.symbol_parser import (
     extract_symbols_from_code,
     map_lines_to_symbols,
     extract_modified_line_numbers_from_diff,
-    resolve_file_path
+    resolve_file_path,
+    get_git_file_content
 )
 from archaeologist.retrieval.embedder import Embedder
 from archaeologist.retrieval.vector_store import VectorStore
 from archaeologist.retrieval.bm25_index import BM25Index
 
 class IngestionPipeline:
-    def __init__(self, repo_path: str, repo_url: Optional[str] = None, since_date: Optional[str] = None):
+    def __init__(self, repo_path: str, repo_url: Optional[str] = None, since_date: Optional[str] = None, github_limit: int = 500):
         self.repo_path = repo_path
         self.repo_url = repo_url
         self.since_date = since_date
+        self.github_limit = github_limit
 
     def run(self):
         print("Initializing metadata database...")
@@ -39,7 +41,7 @@ class IngestionPipeline:
         vector_store.init_collection()
         vector_store.close()
 
-        # Step 1: Walk git log & Extract AST Symbol Graph
+        # Step 1: Walk git log & Extract AST Symbol Graph at historical commit SHAs
         print(f"Walking git log and extracting AST code symbols from {self.repo_path}...")
         new_commits_count = 0
         
@@ -53,37 +55,42 @@ class IngestionPipeline:
                 reverted_subject = detect_revert_from_message(c_data["message"])
                 is_revert = bool(reverted_subject)
                 
-                # AST Symbol Extraction Pass
+                # AST Symbol Extraction Pass at Historical Commit SHA (§1.6 Fix)
                 symbols_modified = []
                 diff_text = get_commit_diff(self.repo_path, c_data["sha"])
                 if diff_text:
                     modified_lines_map = extract_modified_line_numbers_from_diff(diff_text)
                     for fpath, lines in modified_lines_map.items():
-                        resolved_path = resolve_file_path(self.repo_path, fpath)
-                        if resolved_path:
-                            try:
-                                with open(resolved_path, "r", encoding="utf-8", errors="ignore") as f:
-                                    code_text = f.read()
-                                file_symbols = extract_symbols_from_code(code_text, fpath)
-                                touched_syms = map_lines_to_symbols(file_symbols, lines)
-                                symbols_modified.extend(touched_syms)
+                        # Extract exact code text at the historical commit SHA
+                        code_text = get_git_file_content(self.repo_path, c_data["sha"], fpath)
+                        if not code_text:
+                            resolved_path = resolve_file_path(self.repo_path, fpath)
+                            if resolved_path:
+                                try:
+                                    with open(resolved_path, "r", encoding="utf-8", errors="ignore") as f:
+                                        code_text = f.read()
+                                except Exception:
+                                    code_text = None
 
-                                for sym in file_symbols:
-                                    sym_obj = session.get(SymbolIndex, sym["symbol_id"])
-                                    if not sym_obj:
-                                        sym_obj = SymbolIndex(
-                                            symbol_id=sym["symbol_id"],
-                                            file_path=fpath,
-                                            symbol_name=sym["name"],
-                                            kind=sym["kind"],
-                                            commit_count=1 if sym["symbol_id"] in touched_syms else 0
-                                        )
-                                        session.add(sym_obj)
-                                    elif sym["symbol_id"] in touched_syms:
-                                        sym_obj.commit_count += 1
-                                        session.add(sym_obj)
-                            except Exception:
-                                pass
+                        if code_text:
+                            file_symbols = extract_symbols_from_code(code_text, fpath)
+                            touched_syms = map_lines_to_symbols(file_symbols, lines)
+                            symbols_modified.extend(touched_syms)
+
+                            for sym in file_symbols:
+                                sym_obj = session.get(SymbolIndex, sym["symbol_id"])
+                                if not sym_obj:
+                                    sym_obj = SymbolIndex(
+                                        symbol_id=sym["symbol_id"],
+                                        file_path=fpath,
+                                        symbol_name=sym["name"],
+                                        kind=sym["kind"],
+                                        commit_count=1 if sym["symbol_id"] in touched_syms else 0
+                                    )
+                                    session.add(sym_obj)
+                                elif sym["symbol_id"] in touched_syms:
+                                    sym_obj.commit_count += 1
+                                    session.add(sym_obj)
 
                 commit_obj = Commit(
                     sha=c_data["sha"],
@@ -125,10 +132,10 @@ class IngestionPipeline:
         # Step 3: Fetch GitHub Issues and PRs
         if self.repo_url:
             try:
-                print(f"Fetching GitHub Issues and PRs for {self.repo_url}...")
+                print(f"Fetching GitHub Issues and PRs for {self.repo_url} (limit={self.github_limit})...")
                 gh_client = GitHubIngestionClient(self.repo_url)
-                prs = gh_client.fetch_pull_requests(limit=30)
-                issues = gh_client.fetch_issues(limit=30)
+                prs = gh_client.fetch_pull_requests(limit=self.github_limit)
+                issues = gh_client.fetch_issues(limit=self.github_limit)
                 
                 with get_session_context() as session:
                     for pr_data in prs:
@@ -139,12 +146,14 @@ class IngestionPipeline:
                                 title=pr_data["title"],
                                 body=pr_data["body"],
                                 state=pr_data["state"],
-                                author=pr_data["author"],
+                                author=pr_data.get("author", "unknown"),
                                 created_at=pr_data["created_at"],
                                 merged_at=pr_data["merged_at"],
-                                merged_commit_sha=pr_data["merged_commit_sha"],
-                                comments=pr_data["comments"],
-                                linked_issue_numbers=pr_data["linked_issue_numbers"]
+                                merge_commit_sha=pr_data.get("merged_commit_sha"),
+                                merged_commit_sha=pr_data.get("merged_commit_sha"),
+                                comments=pr_data.get("comments", []),
+                                review_comments=pr_data.get("review_comments", pr_data.get("comments", [])),
+                                linked_issue_numbers=pr_data.get("linked_issue_numbers", [])
                             )
                             session.add(pr_obj)
 
@@ -156,12 +165,12 @@ class IngestionPipeline:
                                 title=issue_data["title"],
                                 body=issue_data["body"],
                                 state=issue_data["state"],
-                                author=issue_data["author"],
+                                author=issue_data.get("author", "unknown"),
                                 created_at=issue_data["created_at"],
-                                closed_at=issue_data["closed_at"],
-                                labels=issue_data["labels"],
-                                comments=issue_data["comments"],
-                                linked_pr_numbers=issue_data["linked_pr_numbers"]
+                                closed_at=issue_data.get("closed_at"),
+                                labels=issue_data.get("labels", []),
+                                comments=issue_data.get("comments", []),
+                                linked_pr_numbers=issue_data.get("linked_pr_numbers", [])
                             )
                             session.add(issue_obj)
             except Exception as e:
@@ -196,10 +205,10 @@ class IngestionPipeline:
         with get_session_context() as session:
             all_commits = session.exec(select(Commit)).all()
             
-            # Batch diff summarization to minimize total LLM API call count (5x reduction)
+            # Batch diff summarization up to 20 files per commit (§2.4 Fix)
             eligible_diffs = []
             for c in all_commits:
-                if 0 < len(c.files_changed) <= 5:
+                if 0 < len(c.files_changed) <= 20:
                     d_text = get_commit_diff(self.repo_path, c.sha)
                     if d_text:
                         eligible_diffs.append({"sha": c.sha, "diff_text": d_text})
@@ -265,7 +274,7 @@ class IngestionPipeline:
             bm25.fit(chunk_dicts)
             bm25.save("bm25_index.bin")
 
-        # 6b. Qdrant Dense Index
+        # 6b. Qdrant Dense Index (§2.5 Fix: set embedded=True)
         if chunk_dicts:
             vector_store = VectorStore(vector_size=embedder.dimension)
             vector_store.init_collection()
@@ -276,6 +285,12 @@ class IngestionPipeline:
             
             if embeddings:
                 vector_store.upsert_chunks(chunk_dicts, embeddings)
+                with get_session_context() as session:
+                    for c_dict in chunk_dicts:
+                        c_db = session.get(Chunk, c_dict["id"])
+                        if c_db:
+                            c_db.embedded = True
+                            session.add(c_db)
                 print("Dense vector indexing complete!")
             vector_store.close()
 

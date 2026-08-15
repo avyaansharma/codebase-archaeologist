@@ -24,8 +24,8 @@ class GitHubIngestionClient:
             print(f"Notice: Could not access GitHub repository metadata for '{self.owner}/{self.repo_name}': {e}")
             self.repo = None
 
-    def fetch_pull_requests(self, state: str = "all", limit: int = 50) -> List[Dict[str, Any]]:
-        """Fetches PRs with main metadata, comments, and linked issue numbers."""
+    def fetch_pull_requests(self, state: str = "all", limit: int = 500) -> List[Dict[str, Any]]:
+        """Fetches PRs across repository history with metadata, review comments, and linked issues."""
         if not self.repo:
             return []
 
@@ -37,7 +37,6 @@ class GitHubIngestionClient:
                 if count >= limit:
                     break
                 
-                # Parse linked issue numbers from body
                 body_text = pr.body or ""
                 linked_issues = [int(n) for n in re.findall(r'(?:fixes|resolves|closes|refs)\s+#(\d+)', body_text, re.IGNORECASE)]
                 
@@ -45,13 +44,14 @@ class GitHubIngestionClient:
                 try:
                     for c in pr.get_issue_comments():
                         comments.append({
+                            "author": c.user.login if c.user else "unknown",
                             "user": c.user.login if c.user else "unknown",
-                            "body": c.body,
+                            "body": c.body or "",
                             "created_at": c.created_at.isoformat()
                         })
                 except Exception as e:
                     if "rate limit" in str(e).lower() or "403" in str(e):
-                        print(f"Warning: GitHub API rate limit hit while fetching PR comments. Skipping further comment fetch.")
+                        print(f"Warning: GitHub API rate limit hit while fetching PR comments.")
                         break
 
                 prs_data.append({
@@ -63,7 +63,9 @@ class GitHubIngestionClient:
                     "created_at": pr.created_at,
                     "merged_at": pr.merged_at,
                     "merged_commit_sha": pr.merge_commit_sha,
+                    "merge_commit_sha": pr.merge_commit_sha,
                     "comments": comments,
+                    "review_comments": comments,
                     "linked_issue_numbers": linked_issues,
                 })
                 count += 1
@@ -72,8 +74,8 @@ class GitHubIngestionClient:
 
         return prs_data
 
-    def fetch_issues(self, state: str = "all", limit: int = 50) -> List[Dict[str, Any]]:
-        """Fetches issues with main metadata, comments, labels, and linked PR numbers."""
+    def fetch_issues(self, state: str = "all", limit: int = 500) -> List[Dict[str, Any]]:
+        """Fetches issues across repository history with metadata, comments, and linked PR numbers."""
         if not self.repo:
             return []
 
@@ -94,8 +96,9 @@ class GitHubIngestionClient:
                 try:
                     for c in issue.get_comments():
                         comments.append({
+                            "author": c.user.login if c.user else "unknown",
                             "user": c.user.login if c.user else "unknown",
-                            "body": c.body,
+                            "body": c.body or "",
                             "created_at": c.created_at.isoformat()
                         })
                 except Exception as e:

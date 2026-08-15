@@ -1,33 +1,29 @@
 import os
 import re
-from typing import Optional
+
+SHA_REGEX = re.compile(r"^[0-9a-fA-F]{7,40}$")
 
 def validate_repo_path(repo_path: str) -> str:
-    """Validates that a repo path exists and is a valid directory."""
+    """Validates that repo_path exists and is a valid directory."""
+    if not repo_path:
+        raise ValueError("Repository path cannot be empty.")
     abs_path = os.path.abspath(repo_path)
     if not os.path.exists(abs_path):
-        raise ValueError(f"Repository path '{repo_path}' does not exist.")
+        raise ValueError(f"Repository path '{abs_path}' does not exist.")
     if not os.path.isdir(abs_path):
-        raise ValueError(f"Repository path '{repo_path}' is not a directory.")
+        raise ValueError(f"Repository path '{abs_path}' is not a directory.")
     return abs_path
 
-def sanitize_file_path(base_repo_path: str, target_file_path: str) -> str:
-    """Sanitizes and prevents path traversal outside base repository path."""
-    abs_base = os.path.abspath(base_repo_path)
-    # Resolve relative target file path against abs_base
-    joined = os.path.abspath(os.path.join(abs_base, target_file_path))
-    
-    # Check that joined path stays within abs_base directory
-    if not joined.startswith(abs_base):
-        raise ValueError(f"Path traversal detected: '{target_file_path}' is outside repository root.")
-        
-    # Return path relative to base_repo_path for git commands
-    rel_path = os.path.relpath(joined, abs_base)
-    return rel_path
-
 def sanitize_sha(sha: str) -> str:
-    """Sanitizes git commit SHA to contain only alphanumeric characters."""
-    cleaned = sha.strip()
-    if not re.match(r'^[a-fA-F0-9]{4,40}$', cleaned):
-        raise ValueError(f"Invalid Git commit SHA format: '{sha}'")
-    return cleaned
+    """Sanitizes git SHA input using strict hex regex allowlist."""
+    if not sha or not SHA_REGEX.match(sha):
+        raise ValueError(f"Invalid git SHA format: '{sha}'")
+    return sha
+
+def sanitize_file_path(base_repo_path: str, user_path: str) -> str:
+    """Prevents path traversal attacks by ensuring user_path stays strictly within base_repo_path."""
+    abs_base = os.path.abspath(base_repo_path)
+    joined = os.path.abspath(os.path.join(abs_base, user_path))
+    if joined != abs_base and not joined.startswith(abs_base + os.sep):
+        raise ValueError(f"Path traversal detected: '{user_path}' attempts to leave base directory '{abs_base}'.")
+    return os.path.relpath(joined, abs_base)

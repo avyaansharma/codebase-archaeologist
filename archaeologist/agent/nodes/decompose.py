@@ -22,7 +22,12 @@ def decompose_node(state: AgentState) -> dict:
     api_key = get_gemini_api_key()
     if not api_key:
         print("WARNING: GEMINI_API_KEY / GOOGLE_API_KEY not found. Decompose skipped.")
-        return {"sub_questions": [question]}
+        return {
+            "sub_questions": [question],
+            "current_sub_question_index": 0,
+            "retrieved_chunks": [],
+            "evidence_by_chunk_id": {}
+        }
 
     try:
         client = GeminiClientWrapper(api_key=api_key)
@@ -34,7 +39,17 @@ def decompose_node(state: AgentState) -> dict:
             max_output_tokens=2000
         )
         sub_qs = result.get("sub_questions", [question])
-        return {"sub_questions": sub_qs if sub_qs else [question]}
+        return {
+            "sub_questions": sub_qs if sub_qs else [question],
+            "current_sub_question_index": 0,
+            "retrieved_chunks": [],
+            "evidence_by_chunk_id": {}
+        }
     except Exception as e:
         print(f"Error in decompose_node: {e}")
-        return {"sub_questions": [question]}
+        return {
+            "sub_questions": [question],
+            "current_sub_question_index": 0,
+            "retrieved_chunks": [],
+            "evidence_by_chunk_id": {}
+        }

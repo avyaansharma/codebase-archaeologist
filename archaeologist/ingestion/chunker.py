@@ -1,7 +1,7 @@
 import tiktoken
+import uuid
 from datetime import datetime
 from typing import List, Dict, Any
-import uuid
 
 enc = tiktoken.get_encoding("cl100k_base")
 
@@ -9,6 +9,11 @@ def token_count(text: str) -> int:
     if not text:
         return 0
     return len(enc.encode(text))
+
+def make_deterministic_chunk_id(source_type: str, source_id: str, index: int = 0, text_snippet: str = "") -> str:
+    """Generates a deterministic UUID5 chunk ID based on source metadata and content snippet."""
+    key = f"{source_type}:{source_id}:{index}:{text_snippet[:60]}"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
 
 def chunk_commit(commit: dict, diff_summary: str | None) -> dict:
     body = diff_summary or ""
@@ -24,8 +29,10 @@ def chunk_commit(commit: dict, diff_summary: str | None) -> dict:
         body = enc.decode(body_tokens)
         text = f"{msg_text}{body}".strip()
         
+    chunk_id = make_deterministic_chunk_id("commit", commit["sha"], 0, text)
+
     return {
-        "id": str(uuid.uuid4()),
+        "id": chunk_id,
         "source_type": "commit",
         "source_id": commit["sha"],
         "text": text,
@@ -40,17 +47,19 @@ def chunk_commit(commit: dict, diff_summary: str | None) -> dict:
 def chunk_issue(issue: dict) -> List[dict]:
     chunks = []
     source_id = f"issue#{issue['number']}"
+    author_name = issue.get("author") or "unknown"
     
     body_text = issue.get("body") or ""
-    issue_start = f"[Issue #{issue['number']} - '{issue['title']}' created by ghost]\n{body_text}"
+    issue_start = f"[Issue #{issue['number']} - '{issue['title']}' created by {author_name}]\n{body_text}"
     if token_count(issue_start) > 400:
         truncated_body = enc.decode(enc.encode(body_text)[:300])
-        issue_start = f"[Issue #{issue['number']} - '{issue['title']}' created by ghost]\n{truncated_body}..."
+        issue_start = f"[Issue #{issue['number']} - '{issue['title']}' created by {author_name}]\n{truncated_body}..."
 
     created_at = issue.get("created_at") or datetime.utcnow()
     
+    chunk_id_head = make_deterministic_chunk_id("issue", source_id, 0, issue_start)
     chunks.append({
-        "id": str(uuid.uuid4()),
+        "id": chunk_id_head,
         "source_type": "issue",
         "source_id": source_id,
         "text": issue_start,
@@ -62,11 +71,13 @@ def chunk_issue(issue: dict) -> List[dict]:
         "related_ids": [f"pr#{num}" for num in issue.get("linked_pr_numbers", [])]
     })
 
-    for idx, c in enumerate(issue.get("comments", [])):
-        comment_text = f"[Issue #{issue['number']} comment by {c['author']}]: {c['body']}"
+    for idx, c in enumerate(issue.get("comments", []), start=1):
+        c_author = c.get("author") or "unknown"
+        c_body = c.get("body") or ""
+        comment_text = f"[Issue #{issue['number']} comment by {c_author}]: {c_body}"
         if token_count(comment_text) > 400:
-            truncated = enc.decode(enc.encode(c['body'])[:350])
-            comment_text = f"[Issue #{issue['number']} comment by {c['author']}]: {truncated}..."
+            truncated = enc.decode(enc.encode(c_body)[:350])
+            comment_text = f"[Issue #{issue['number']} comment by {c_author}]: {truncated}..."
         
         c_time = c.get("created_at")
         if isinstance(c_time, str):
@@ -77,8 +88,9 @@ def chunk_issue(issue: dict) -> List[dict]:
         else:
             c_time = c_time or created_at
             
+        chunk_id_comm = make_deterministic_chunk_id("issue", source_id, idx, comment_text)
         chunks.append({
-            "id": str(uuid.uuid4()),
+            "id": chunk_id_comm,
             "source_type": "issue",
             "source_id": source_id,
             "text": comment_text,
@@ -95,17 +107,19 @@ def chunk_issue(issue: dict) -> List[dict]:
 def chunk_pr(pr: dict) -> List[dict]:
     chunks = []
     source_id = f"pr#{pr['number']}"
+    author_name = pr.get("author") or "unknown"
     
     body_text = pr.get("body") or ""
-    pr_start = f"[PR #{pr['number']} - '{pr['title']}' created by {pr['author']}]\n{body_text}"
+    pr_start = f"[PR #{pr['number']} - '{pr['title']}' created by {author_name}]\n{body_text}"
     if token_count(pr_start) > 400:
         truncated_body = enc.decode(enc.encode(body_text)[:300])
-        pr_start = f"[PR #{pr['number']} - '{pr['title']}' created by {pr['author']}]\n{truncated_body}..."
+        pr_start = f"[PR #{pr['number']} - '{pr['title']}' created by {author_name}]\n{truncated_body}..."
 
     created_at = pr.get("created_at") or datetime.utcnow()
     
+    chunk_id_head = make_deterministic_chunk_id("pr", source_id, 0, pr_start)
     chunks.append({
-        "id": str(uuid.uuid4()),
+        "id": chunk_id_head,
         "source_type": "pr",
         "source_id": source_id,
         "text": pr_start,
@@ -127,11 +141,13 @@ def chunk_pr(pr: dict) -> List[dict]:
     for c in pr.get("comments", []):
         comments_to_process.append(c)
 
-    for c in comments_to_process:
-        comment_text = f"[PR #{pr['number']} comment by {c.get('author', 'unknown')}]: {c.get('body', '')}"
+    for idx, c in enumerate(comments_to_process, start=1):
+        c_author = c.get("author") or "unknown"
+        c_body = c.get("body") or ""
+        comment_text = f"[PR #{pr['number']} comment by {c_author}]: {c_body}"
         if token_count(comment_text) > 400:
-            truncated = enc.decode(enc.encode(c.get('body', ''))[:350])
-            comment_text = f"[PR #{pr['number']} comment by {c.get('author', 'unknown')}]: {truncated}..."
+            truncated = enc.decode(enc.encode(c_body)[:350])
+            comment_text = f"[PR #{pr['number']} comment by {c_author}]: {truncated}..."
             
         c_time = c.get("created_at")
         if isinstance(c_time, str):
@@ -142,8 +158,9 @@ def chunk_pr(pr: dict) -> List[dict]:
         else:
             c_time = c_time or created_at
 
+        chunk_id_comm = make_deterministic_chunk_id("pr", source_id, idx, comment_text)
         chunks.append({
-            "id": str(uuid.uuid4()),
+            "id": chunk_id_comm,
             "source_type": "pr",
             "source_id": source_id,
             "text": comment_text,
