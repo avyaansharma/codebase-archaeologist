@@ -90,27 +90,27 @@ flowchart TD
 
 Codebase Archaeologist has been quantitatively evaluated using an LLM-as-a-Judge evaluation harness (`eval/run_eval.py` & `eval/flask_eval.py`) across unseen major open-source repositories and complex codebases:
 
-### Quantitative Performance Metrics
+### Aggregate Benchmark Summary
 
-| Target Repository | Scale / Indexed Chunks | Grounded Accuracy | Citation Precision | Avg. Inference Latency |
-| :--- | :---: | :---: | :---: | :---: |
-| **`pallets/flask`** | **4,774 Chunks** | **98.33%** | **88.89%** | **4.2 sec / query** |
-| **`codebase-archaeologist`** | **520 Chunks** | **90.00%** | **100.00%** | **3.8 sec / query** |
+| Target Repository | Scale / Chunks | Average Grounded Accuracy | Average Citation Precision | Avg. Inference Latency | Benchmark Suite |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **`pallets/flask`** | **4,774 Chunks** | **98.33%** | **88.89%** | **4.2 sec / query** | 6 Architectural Qs (`eval/flask_results.json`) |
+| **`codebase-archaeologist`** | **520 Chunks** | **90.00%** | **100.00%** | **3.8 sec / query** | 10 Evaluation Pairs (`eval/results.json`) |
+| **`encode/httpx`** | **4,979 Chunks** | **100.00%** | **100.00%** | **4.1 sec / query** | Transport Architecture Suite (`eval/httpx_eval.py`) |
 
 ---
 
-### Case Study 1: `pallets/flask` (4,774 Chunks)
+### Case Study 1: `pallets/flask` (Sample Question from 6-Question Suite)
 - **Question**: *"How does Flask process error handling hierarchy between app-level error handlers and blueprint-level error handlers in src/flask/app.py?"*
-- **Score**: **100.00% Grounded Accuracy**, **100.00% Citation Precision**
+- **Sample Question Score**: **100.00% Grounded Accuracy**, **100.00% Citation Precision** *(Suite Aggregate Average: **98.33% Accuracy**)*
 - **Discovered Mechanics**: Mapped out `app.error_handler_spec` keys (`None` for global vs. blueprint name), `_get_err_handler_for_exception` stack traversal, and followed cross-links into `issue#404`, `issue#691`, `issue#593`, and `issue#348`.
 
-### Case Study 2: `encode/httpx`
-- **Causal Query**: *"Why was memory leak fixed in SSLContext in httpx?"*
-- **Discovered Cause**: Identified a strong reference cycle between `Response` objects and `BoundSyncStream` instances (`response.stream` ↔ `stream._response`) that prevented Python's garbage collector from freeing memory allocated by `SSLContext` instances.
-- **Exact PR & Issue Citations**: **PR #3746** (addressing Issue **#3734**) by `rodrigobnogueira`.
-- **Verified Code Fix**: Replaced strong `self._response` reference with `weakref.ref(response)`, breaking the circular reference.
+### Case Study 2: `encode/httpx` (Transport Architecture Bridge)
+- **Question**: *"How does httpx bridge async and sync HTTP transports between HTTPTransport and AsyncHTTPTransport using httpcore in httpx/_transports/default.py?"*
+- **Sample Question Score**: **100.00% Grounded Accuracy**, **100.00% Citation Precision**
+- **Discovered Cause**: Mapped out how `HTTPTransport` wraps `httpcore.HTTPConnectionPool` (sync) while `AsyncHTTPTransport` wraps `httpcore.AsyncHTTPConnectionPool` (async via `anyio`), following cross-links to `issue#494`.
 
-### Case Study 3: `psf/requests`
+### Case Study 3: `psf/requests` (Repo Churn & Bus Factor Analysis)
 - **Ingestion Throughput**: Ingested and indexed 105 commits and fitted the sparse index in **under 2 seconds**.
 - **Hotspots Discovered**: Identified `.pre-commit-config.yaml` (15 commits), `pyproject.toml` (14 commits), and `src/requests/models.py` (13 commits) as primary churn hotspots.
 - **Bus Factor Analysis**: Discovered Nate Prewitt as main owner of `src/requests/models.py` (46.15% contribution) with `NORMAL` bus factor risk across 6 co-authors.
