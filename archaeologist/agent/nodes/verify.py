@@ -31,6 +31,7 @@ def verify_node(state: AgentState) -> dict:
     question = state["question"]
     retrieved = state.get("retrieved_chunks", [])
     draft = state.get("draft_answer")
+    verification_passed = state.get("verification_passed", True)
 
     print("Agent: Generating draft answer and self-verifying using Gemini 3.5 Flash...")
 
@@ -45,8 +46,9 @@ def verify_node(state: AgentState) -> dict:
     client = GeminiClientWrapper(api_key=api_key)
     evidence_text = "\n\n".join([f"[{c['id']}] {c['text']}" for c in retrieved[:12]])
 
-    # 1. Generate Draft Answer if missing (§1.2 Fix)
-    if not draft:
+    # 1. Force Draft Answer regeneration if missing or if previous verification failed (§1 Fix)
+    if not draft or not verification_passed:
+        draft = None
         try:
             draft_prompt = DRAFT_PROMPT.format(question=question, evidence=evidence_text)
             draft = client.generate_text(

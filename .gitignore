@@ -8,6 +8,8 @@ venv/
 
 # Archaeologist Storage & DB
 *.db
+*.db-shm
+*.db-wal
 *.bin
 qdrant_storage/
 qdrant_storage_local/

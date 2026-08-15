@@ -1,7 +1,7 @@
 import os
 import re
 from typing import List, Dict, Any, Optional
-from github import Github, RateLimitExceededException
+from github import Github
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,14 +24,14 @@ class GitHubIngestionClient:
             print(f"Notice: Could not access GitHub repository metadata for '{self.owner}/{self.repo_name}': {e}")
             self.repo = None
 
-    def fetch_pull_requests(self, state: str = "all", limit: int = 500) -> List[Dict[str, Any]]:
-        """Fetches PRs across repository history with metadata, review comments, and linked issues."""
+    def fetch_pull_requests(self, state: str = "all", limit: int = 500, direction: str = "asc") -> List[Dict[str, Any]]:
+        """Fetches PRs starting from oldest history (direction='asc') with genuine inline review comments & issue comments."""
         if not self.repo:
             return []
 
         prs_data = []
         try:
-            prs = self.repo.get_pulls(state=state, sort="created", direction="desc")
+            prs = self.repo.get_pulls(state=state, sort="created", direction=direction)
             count = 0
             for pr in prs:
                 if count >= limit:
@@ -40,6 +40,7 @@ class GitHubIngestionClient:
                 body_text = pr.body or ""
                 linked_issues = [int(n) for n in re.findall(r'(?:fixes|resolves|closes|refs)\s+#(\d+)', body_text, re.IGNORECASE)]
                 
+                # 1. Issue-level discussion comments
                 comments = []
                 try:
                     for c in pr.get_issue_comments():
@@ -51,8 +52,24 @@ class GitHubIngestionClient:
                         })
                 except Exception as e:
                     if "rate limit" in str(e).lower() or "403" in str(e):
-                        print(f"Warning: GitHub API rate limit hit while fetching PR comments.")
+                        print("Warning: GitHub API rate limit hit while fetching PR issue comments.")
                         break
+
+                # 2. Genuine inline code-review comments (on diff lines)
+                review_comments = []
+                try:
+                    for rc in pr.get_review_comments():
+                        review_comments.append({
+                            "author": rc.user.login if rc.user else "unknown",
+                            "user": rc.user.login if rc.user else "unknown",
+                            "path": rc.path or "",
+                            "line": rc.line or rc.original_line or 0,
+                            "body": rc.body or "",
+                            "created_at": rc.created_at.isoformat()
+                        })
+                except Exception as e:
+                    if "rate limit" in str(e).lower() or "403" in str(e):
+                        print("Warning: GitHub API rate limit hit while fetching PR review comments.")
 
                 prs_data.append({
                     "number": pr.number,
@@ -65,7 +82,7 @@ class GitHubIngestionClient:
                     "merged_commit_sha": pr.merge_commit_sha,
                     "merge_commit_sha": pr.merge_commit_sha,
                     "comments": comments,
-                    "review_comments": comments,
+                    "review_comments": review_comments,
                     "linked_issue_numbers": linked_issues,
                 })
                 count += 1
@@ -74,14 +91,14 @@ class GitHubIngestionClient:
 
         return prs_data
 
-    def fetch_issues(self, state: str = "all", limit: int = 500) -> List[Dict[str, Any]]:
-        """Fetches issues across repository history with metadata, comments, and linked PR numbers."""
+    def fetch_issues(self, state: str = "all", limit: int = 500, direction: str = "asc") -> List[Dict[str, Any]]:
+        """Fetches issues starting from oldest history (direction='asc') with comments, labels, and linked PRs."""
         if not self.repo:
             return []
 
         issues_data = []
         try:
-            issues = self.repo.get_issues(state=state, sort="created", direction="desc")
+            issues = self.repo.get_issues(state=state, sort="created", direction=direction)
             count = 0
             for issue in issues:
                 if count >= limit:

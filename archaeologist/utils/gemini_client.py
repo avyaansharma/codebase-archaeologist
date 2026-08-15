@@ -17,8 +17,22 @@ FALLBACK_MODELS = [
     "gemini-flash-latest"
 ]
 
+def get_gemini_api_keys() -> List[str]:
+    keys = []
+    k1 = os.getenv("GEMINI_API_KEY")
+    if k1:
+        keys.append(k1)
+    k2 = os.getenv("GEMINI_API_KEY_SECONDARY")
+    if k2 and k2 not in keys:
+        keys.append(k2)
+    k3 = os.getenv("GOOGLE_API_KEY")
+    if k3 and k3 not in keys:
+        keys.append(k3)
+    return keys
+
 def get_gemini_api_key() -> Optional[str]:
-    return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    keys = get_gemini_api_keys()
+    return keys[0] if keys else None
 
 class GeminiClientWrapper:
     _rate_limit_lock = threading.Lock()
@@ -27,10 +41,14 @@ class GeminiClientWrapper:
     _semaphore = threading.BoundedSemaphore(value=2)  # Max 2 concurrent API calls
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or get_gemini_api_key()
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY environment variable is required.")
-        self.client = genai.Client(api_key=self.api_key)
+        provided_key = api_key or get_gemini_api_key()
+        self.api_keys = get_gemini_api_keys()
+        if provided_key and provided_key not in self.api_keys:
+            self.api_keys.insert(0, provided_key)
+        if not self.api_keys:
+            raise ValueError("GEMINI_API_KEY environment variable is required.")
+            
+        self.clients = [genai.Client(api_key=k) for k in self.api_keys]
 
     def _wait_for_rate_limit(self):
         """Enforces thread-safe rate throttling and interval pacing between requests."""
@@ -49,7 +67,7 @@ class GeminiClientWrapper:
         temperature: float = 0.0,
         max_output_tokens: int = 2000
     ) -> str:
-        """Generates text using Google Gemini API with rate throttling and model fallback."""
+        """Generates text using Google Gemini API with API key rotation, model fallback, and rate throttling."""
         config = types.GenerateContentConfig(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
@@ -61,23 +79,24 @@ class GeminiClientWrapper:
 
         with GeminiClientWrapper._semaphore:
             self._wait_for_rate_limit()
-            for m_name in models_to_try:
-                try:
-                    response = self.client.models.generate_content(
-                        model=m_name,
-                        contents=prompt,
-                        config=config
-                    )
-                    return response.text.strip() if response.text else ""
-                except Exception as e:
-                    last_exception = e
-                    err_str = str(e)
-                    if any(k in err_str for k in ["404", "429", "NOT_FOUND", "RESOURCE_EXHAUSTED", "Quota exceeded", "not available"]):
-                        time.sleep(2.0)  # Brief backoff before fallback model
-                        continue
-                    raise e
+            for client in self.clients:
+                for m_name in models_to_try:
+                    try:
+                        response = client.models.generate_content(
+                            model=m_name,
+                            contents=prompt,
+                            config=config
+                        )
+                        return response.text.strip() if response.text else ""
+                    except Exception as e:
+                        last_exception = e
+                        err_str = str(e)
+                        if any(k in err_str for k in ["404", "429", "NOT_FOUND", "RESOURCE_EXHAUSTED", "Quota exceeded", "not available"]):
+                            time.sleep(1.0)
+                            continue
+                        raise e
 
-        raise last_exception or RuntimeError("Failed to generate content with available Gemini models.")
+        raise last_exception or RuntimeError("Failed to generate content with available Gemini models/keys.")
 
     def generate_json(
         self,
@@ -87,7 +106,7 @@ class GeminiClientWrapper:
         temperature: float = 0.0,
         max_output_tokens: int = 2000
     ) -> Dict[str, Any]:
-        """Generates JSON object using Google Gemini API with rate throttling and clean JSON parsing."""
+        """Generates JSON object using Google Gemini API with API key fallback and clean JSON parsing."""
         raw_text = self.generate_text(
             prompt=prompt,
             system_instruction=system_instruction,

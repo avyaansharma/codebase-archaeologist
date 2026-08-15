@@ -1,78 +1,78 @@
 {
   "dataset_path": "eval/dataset/unseen_eval_pairs.jsonl",
   "total_questions": 10,
-  "average_grounded_accuracy": 1.0,
-  "average_citation_precision": 0.9,
+  "average_grounded_accuracy": 0.0,
+  "average_citation_precision": 0.0,
   "results": [
     {
       "question": "Why was chunker.py token budget capped at 500 tokens for commits?",
       "expected_answer": "To fit commit messages and diff summaries cleanly within context window limits without overflowing embedding token budgets.",
-      "generated_answer": "The token budget for commit chunks in `chunker.py` is capped at 500 tokens to ensure that commit messages and diff summaries fit cleanly within LLM context window limits. This constraint prevents the system from overflowing embedding token budgets while maintaining sufficient detail for causal analysis.\n\nAs implemented in `archaeologist/ingestion/chunker.py`, the `chunk_commit` function calculates the token count of the commit metadata (SHA, author, message, and modified symbols) first. It then dynamically allocates the remaining budget\u2014up to a maximum of 500 tokens\u2014to the `diff_summary`. If the combined text exceeds this limit, the diff summary is truncated to ensure the resulting chunk remains within the system's operational parameters for retrieval and reasoning.",
-      "grounded_accuracy": 1.0,
-      "citation_precision": 1.0
+      "generated_answer": "Error executing agent loop: 'id'",
+      "grounded_accuracy": 0.0,
+      "citation_precision": 0.0
     },
     {
       "question": "How does git_parser.py prevent shell injection attacks during log walking?",
       "expected_answer": "By passing command line arguments directly as a list to subprocess.Popen without shell interpolation or shell=True execution.",
-      "generated_answer": "`git_parser.py` prevents shell injection attacks during log walking by passing command-line arguments as a literal list directly to `subprocess.Popen` rather than evaluating them through a shell interpreter. \n\nSpecifically, the implementation ensures security through the following mechanisms:\n1. **List-Based Argument Execution:** In `archaeologist/ingestion/git_parser.py`, commands are constructed as a list (e.g., `cmd = [\"git\", \"-C\", validated_path, \"log\", ...]`) and passed directly to `subprocess.Popen` without setting `shell=True`. This prevents the operating system shell from performing command chaining, glob expansion, or variable interpolation on untrusted inputs.\n2. **Repository Path Validation:** Before executing any git commands, `git_parser.py` calls `validate_repo_path(repo_path)` (defined in `archaeologist/utils/security.py`) to verify that the target repository path exists, is a valid directory, and safely resolves its absolute path before interacting with the system subprocess.",
-      "grounded_accuracy": 1.0,
-      "citation_precision": 1.0
+      "generated_answer": "Error executing agent loop: 'id'",
+      "grounded_accuracy": 0.0,
+      "citation_precision": 0.0
     },
     {
       "question": "Why is PRAGMA journal_mode=WAL enabled in db.py?",
       "expected_answer": "To enable Write-Ahead Logging for high concurrency, allowing simultaneous reads and writes across multi-threaded database sessions.",
-      "generated_answer": "`PRAGMA journal_mode=WAL` is enabled in `db.py` to activate Write-Ahead Logging (WAL) in SQLite, providing robust multi-thread support and high concurrency [archaeologist/storage/db.py]. \n\nBy switching SQLite from its default rollback journal mode to WAL mode, the database allows simultaneous reads and writes across multi-threaded database sessions without locking out concurrent readers during write operations.",
-      "grounded_accuracy": 1.0,
-      "citation_precision": 1.0
+      "generated_answer": "Error executing agent loop: 'id'",
+      "grounded_accuracy": 0.0,
+      "citation_precision": 0.0
     },
     {
       "question": "How does link_resolver.py perform bidirectional cross-link resolution?",
       "expected_answer": "It scans commit messages and PR descriptions for issue/PR tokens and updates references on both entities bidirectionally.",
-      "generated_answer": "Based on the implementation in `archaeologist/ingestion/link_resolver.py`, bidirectional cross-link resolution is designed to ensure that related Pull Requests, Issues, and commit SHAs remain fully linked even when references are declared on only a single side of the conversation. \n\n### Mechanism of Action\n\n1. **Extraction (`extract_refs`)**:\n   The module uses compiled regular expressions to scan text (such as PR titles, bodies, and review/issue comments) for:\n   * **Issue/PR References**: `#123` tokens, including explicit closing keywords (`closes #123`, `fixes #123`, `resolves #123`) which are categorized separately from standard mentions.\n   * **Full URLs**: Direct links in the format `github.com/owner/repo/(issues|pull)/123`.\n   * **Commit SHAs**: Alphanumeric hashes ranging from 7 to 40 characters (`SHA_REF`).\n\n2. **Bidirectional Synchronization (`update_cross_links`)**:\n   When processing a pull request (`pr_list`), the resolver extracts all references from its metadata and associated comments. \n   * It maps the target issue numbers into the pull request's `linked_issue_numbers` field.\n   * Simultaneously, it performs a write-back operation to the corresponding issue in `issue_map`, recording the referencing PR's number into its `linked_pr_numbers` list. \n\n### Purpose\n\nThis dual-ended updating guarantees complete traceability. By bridging single-sided declarations across entities, the retrieval layer and downstream agent nodes (such as `follow_links.py`) can seamlessly traverse the entire discussion path and retrieve contextual lineage regardless of whether the developer explicitly cross-referenced the items from the issue or the pull request side.",
-      "grounded_accuracy": 1.0,
-      "citation_precision": 1.0
+      "generated_answer": "Error executing agent loop: 'id'",
+      "grounded_accuracy": 0.0,
+      "citation_precision": 0.0
     },
     {
       "question": "What constant k is used in reciprocal rank fusion in fusion.py?",
       "expected_answer": "The constant k=60 is used in the RRF formula 1.0 / (k + rank) to balance dense and sparse search rank positions.",
-      "generated_answer": "The constant **$k = 60$** is used in the Reciprocal Rank Fusion (RRF) implementation within `fusion.py`.\n\n### Technical Context\nThe constant is applied in the RRF scoring formula:\n$$\\text{score} = \\sum_{r \\in R} \\frac{1}{k + \\text{rank}}$$\n\nIn `archaeologist/retrieval/fusion.py`, this value is defined as a default parameter in the `reciprocal_rank_fusion` function. It serves as a smoothing factor to mitigate the impact of high-ranking items in either the dense (vector) or sparse (BM25) search results, ensuring that a result must appear consistently across both retrieval methods to achieve a high aggregate score.\n\n### Verification\n*   **Implementation**: The constant is explicitly defined in `archaeologist/retrieval/fusion.py` as `k: int = 60`.\n*   **Validation**: The unit test `tests/test_fusion.py` confirms this value is used during the fusion process. The test specifically calculates the expected RRF score for a chunk present in both search sets using $k=60$:\n    *   Dense rank: 2, Sparse rank: 1\n    *   Calculation: $1/(60+2) + 1/(60+1) \\approx 0.0325$\n*   **Purpose**: This configuration balances the semantic relevance provided by the dense vector search (Qdrant) with the exact keyword matching provided by the sparse search (BM25), preventing any single retrieval method from disproportionately dominating the final ranking.",
-      "grounded_accuracy": 1.0,
-      "citation_precision": 1.0
+      "generated_answer": "Error executing agent loop: 'id'",
+      "grounded_accuracy": 0.0,
+      "citation_precision": 0.0
     },
     {
       "question": "What retry strategy is configured in gemini_client.py?",
       "expected_answer": "Exponential backoff retries with stop_after_attempt(3) and wait_exponential(min=1, max=5) using tenacity.",
-      "generated_answer": "The retry strategy configured in `gemini_client.py` utilizes the `tenacity` library to implement an exponential backoff mechanism. This strategy is designed to handle transient API failures by limiting the number of attempts and spacing out subsequent retries.\n\nSpecifically, the configuration is defined as:\n*   **`stop_after_attempt(3)`**: Limits the client to a maximum of three attempts before failing.\n*   **`wait_exponential(min=1, max=5)`**: Implements exponential backoff, where the wait time between retries starts at a minimum of 1 second and increases up to a maximum of 5 seconds.\n\nThis configuration ensures that the `GeminiClientWrapper` can gracefully recover from temporary network issues or rate-limiting events when communicating with the Gemini API.",
-      "grounded_accuracy": 1.0,
-      "citation_precision": 1.0
+      "generated_answer": "Error executing agent loop: 'id'",
+      "grounded_accuracy": 0.0,
+      "citation_precision": 0.0
     },
     {
       "question": "How does revert_detector.py resolve reverted commits when the original SHA is missing?",
       "expected_answer": "It matches the subject line of the revert commit message against earlier commits in the repository history.",
-      "generated_answer": "Based on the historical implementation in `revert_detector.py`, when a revert commit does not explicitly reference an original commit SHA, it resolves the original commit through the following mechanism:\n\n1. **Subject Extraction:** It applies a regular expression pattern (`REVERT_MSG_PATTERN = re.compile(r'^Revert\\s+\"(.+)\"', re.IGNORECASE)`) to parse the revert commit message and extract the subject line of the original, reverted commit.\n2. **Historical Lookup:** It queries the database using `find_reverted_commit()` to search through repository commits created prior to the revert (`Commit.authored_date < before_date`) that match the extracted subject text (`Commit.message.like(f\"{reverted_subject}%\")`).\n3. **Recency Resolution:** If multiple matching commits share the same subject line, it sorts the results by author date in descending order (`order_by(Commit.authored_date.desc())`) and selects the most recent matching commit.",
-      "grounded_accuracy": 1.0,
-      "citation_precision": 1.0
+      "generated_answer": "Error executing agent loop: 'id'",
+      "grounded_accuracy": 0.0,
+      "citation_precision": 0.0
     },
     {
       "question": "Why does vector_store.py fall back to in-memory Qdrant?",
       "expected_answer": "To provide zero-ops, lock-free execution whenever the local Qdrant server or disk storage is unavailable or locked.",
-      "generated_answer": "Based on the codebase evidence in `archaeologist/retrieval/vector_store.py`, `vector_store.py` falls back to an in-memory Qdrant instance (`QdrantClient(\":memory:\")`) to provide a **zero-ops, lock-free execution path** whenever the primary local Qdrant server is unavailable, unreachable, or fails to connect. \n\n### Technical Implementation Details:\n* **Connection Handling (`_init_client`):** The `VectorStore` class attempts to connect to a configured Qdrant server URL (defaulting to `http://localhost:6333`) with a 1.0-second timeout. \n* **Graceful Degradation:** If the network request, authentication, or collection verification fails (`except Exception:`), the client catches the error and cleanly drops back to an isolated in-memory vector store. This ensures that light deployments, tests, or environments running without a persistent Qdrant daemon can still perform vector searches and run queries without crashing.",
-      "grounded_accuracy": 1.0,
-      "citation_precision": 1.0
+      "generated_answer": "Error executing agent loop: 'id'",
+      "grounded_accuracy": 0.0,
+      "citation_precision": 0.0
     },
     {
       "question": "How does change_coupling_tool identify temporal file coupling?",
       "expected_answer": "By generating all pairs of files modified together in single commits and counting their co-occurrence frequency.",
-      "generated_answer": "The `change_coupling_tool` identifies temporal file coupling by systematically generating all possible pairs of files that are modified together within individual repository commits and subsequently counting their co-occurrence frequency across the entire git commit history.",
-      "grounded_accuracy": 1.0,
+      "generated_answer": "Error executing agent loop: 'id'",
+      "grounded_accuracy": 0.0,
       "citation_precision": 0.0
     },
     {
       "question": "Why was sanitize_file_path added to security.py?",
       "expected_answer": "To prevent path traversal attacks by ensuring file paths remain strictly inside the root repository directory.",
-      "generated_answer": "`sanitize_file_path` was added to `archaeologist/utils/security.py` to implement a critical security control against **path traversal attacks**. \n\n### Causal Context\nThe function was introduced to ensure that any file path provided by a user or external input is strictly constrained to the target repository's directory. Without this validation, an attacker could provide malicious paths (e.g., `../../etc/passwd`) to access sensitive files outside the intended scope of the repository.\n\n### Technical Implementation\nThe function enforces security through the following logic:\n1. **Absolute Path Resolution**: It resolves both the `base_repo_path` and the `user_path` into absolute paths using `os.path.abspath`.\n2. **Boundary Validation**: It verifies that the resulting path starts with the base directory path. If the resolved path attempts to escape the base directory, it raises a `ValueError`.\n3. **Normalization**: It returns the path relative to the base directory, ensuring consistent handling across the codebase.\n\n### Verification\nThe security of this implementation is verified by the test suite in `tests/test_security.py`, which explicitly includes:\n* `test_sanitize_file_path_traversal_attack`: Confirms that attempts to access files like `../../etc/passwd` are blocked.\n* `test_sanitize_file_path_sibling_dir_attack`: Confirms that attempts to access files in sibling directories (e.g., `../repo-evil-sibling/secret.py`) are blocked.\n\nThis utility is currently utilized in `archaeologist/ingestion/symbol_parser.py` (within `get_git_file_content`) and `archaeologist/mcp_server/tools.py` to safely handle file system operations during repository ingestion and history retrieval.",
-      "grounded_accuracy": 1.0,
-      "citation_precision": 1.0
+      "generated_answer": "Error executing agent loop: 'id'",
+      "grounded_accuracy": 0.0,
+      "citation_precision": 0.0
     }
   ]
 }

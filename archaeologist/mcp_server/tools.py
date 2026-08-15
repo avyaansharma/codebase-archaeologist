@@ -79,7 +79,8 @@ def find_related_discussion_tool(ref: str) -> Dict[str, Any]:
     with get_session_context() as session:
         ref_cleaned = ref.strip().lower()
         
-        if len(ref_cleaned) >= 7 and not ref_cleaned.startswith("#") and ref_cleaned.isalnum():
+        from archaeologist.utils.security import SHA_REGEX
+        if len(ref_cleaned) >= 7 and not ref_cleaned.startswith("#") and SHA_REGEX.match(ref_cleaned):
             stmt = select(Commit).where(Commit.sha.like(f"{ref_cleaned}%"))
             commit = session.exec(stmt).first()
             if commit:

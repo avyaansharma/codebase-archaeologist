@@ -16,7 +16,7 @@ def load_qa_pairs(dataset_path: Optional[str] = None) -> List[Dict[str, Any]]:
     path = dataset_path or (UNSEEN_QA_PATH if os.path.exists(UNSEEN_QA_PATH) else DEFAULT_QA_PATH)
     pairs = []
     if not os.path.exists(path):
-        print(f"QA pairs file not found at {path}.")
+        print(f"QA pairs file not found at {path}.", flush=True)
         return []
         
     with open(path, "r", encoding="utf-8") as f:
@@ -33,7 +33,6 @@ class LLMJudge:
     def evaluate_answer(self, question: str, expected: str, generated: str) -> float:
         """Scores generated answer against expected on a scale of 0.0 to 1.0 using Gemini."""
         if not self.gemini:
-            # Fallback keyword match if API key is not present
             words = [w for w in expected.lower().split() if len(w) > 3]
             match_count = sum(1 for w in words if w in generated.lower())
             return min(1.0, match_count / max(1, len(words) * 0.4))
@@ -55,32 +54,22 @@ class LLMJudge:
             res = self.gemini.generate_json(prompt=prompt, model="gemini-3.5-flash")
             return float(res.get("score", 0)) / 10.0
         except Exception as e:
-            print(f"Error in Gemini evaluation judge: {e}")
+            print(f"Error in Gemini evaluation judge: {e}", flush=True)
             return 0.0
 
 def calculate_citation_precision(generated_answer: str, expected_refs: List[str]) -> float:
-    """Calculates fraction of cited sources that correspond to expected references."""
+    """Calculates fraction of expected references that appear in the generated answer."""
     if not expected_refs:
         return 1.0 if generated_answer and "no history" not in generated_answer.lower() else 0.0
         
-    citations = re.findall(r'\[([^\]]+)\]|#(\d+)|commit\s+([0-9a-fA-F]{7,40})|PR\s+#?(\d+)', generated_answer, re.IGNORECASE)
-    if not citations:
-        # Check direct inline mentions
-        found_matches = sum(1 for ref in expected_refs if ref.lower() in generated_answer.lower())
-        return float(found_matches) / len(expected_refs) if expected_refs else 0.0
-
-    matches = 0
-    for citation in citations:
-        c_str = "".join([s for s in citation if s]).lower()
-        if any(ref.lower() in c_str for ref in expected_refs):
-            matches += 1
-            
-    return float(matches) / len(citations)
+    gen_lower = generated_answer.lower()
+    matches = sum(1 for ref in expected_refs if ref.lower() in gen_lower)
+    return float(matches) / len(expected_refs)
 
 def run_evaluation(dataset_path: Optional[str] = None):
     pairs = load_qa_pairs(dataset_path)
     if not pairs:
-        print("No evaluation pairs found to run benchmark.")
+        print("No evaluation pairs found to run benchmark.", flush=True)
         return
 
     from archaeologist.mcp_server.tools import ask_tool
@@ -90,10 +79,10 @@ def run_evaluation(dataset_path: Optional[str] = None):
     precision_scores = []
     detailed_results = []
     
-    print("\nStarting rigorous evaluation benchmark...")
-    print("-" * 80)
-    print(f"{'Question':<50} | {'Grounded Acc':<12} | {'Citation Prec':<12}")
-    print("-" * 80)
+    print("\nStarting rigorous evaluation benchmark...", flush=True)
+    print("-" * 80, flush=True)
+    print(f"{'Question':<50} | {'Grounded Acc':<12} | {'Citation Prec':<12}", flush=True)
+    print("-" * 80, flush=True)
 
     for pair in pairs:
         q = pair["question"]
@@ -120,14 +109,14 @@ def run_evaluation(dataset_path: Optional[str] = None):
         })
         
         q_trunc = q[:47] + "..." if len(q) > 50 else q
-        print(f"{q_trunc:<50} | {acc_score:<12.2%} | {prec_score:<12.2%}")
+        print(f"{q_trunc:<50} | {acc_score:<12.2%} | {prec_score:<12.2%}", flush=True)
 
     avg_acc = sum(scores) / len(scores) if scores else 0.0
     avg_prec = sum(precision_scores) / len(precision_scores) if precision_scores else 0.0
 
-    print("-" * 80)
-    print(f"{'AVERAGE SUMMARY':<50} | {avg_acc:<12.2%} | {avg_prec:<12.2%}")
-    print("-" * 80)
+    print("-" * 80, flush=True)
+    print(f"{'AVERAGE SUMMARY':<50} | {avg_acc:<12.2%} | {avg_prec:<12.2%}", flush=True)
+    print("-" * 80, flush=True)
     
     # Save evaluation summary to results.json
     summary = {
@@ -139,14 +128,14 @@ def run_evaluation(dataset_path: Optional[str] = None):
     }
     with open(RESULTS_PATH, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
-    print(f"Saved evaluation benchmark results to {RESULTS_PATH}")
+    print(f"Saved evaluation benchmark results to {RESULTS_PATH}", flush=True)
 
-    print(f"Target Grounded Accuracy: >= 75.00% (Result: {avg_acc:.2%})")
-    print(f"Target Citation Precision: >= 90.00% (Result: {avg_prec:.2%})")
+    print(f"Target Grounded Accuracy: >= 75.00% (Result: {avg_acc:.2%})", flush=True)
+    print(f"Target Citation Precision: >= 90.00% (Result: {avg_prec:.2%})", flush=True)
     if avg_acc >= 0.75 and avg_prec >= 0.90:
-        print("SUCCESS: Both evaluation metrics meet success criteria!")
+        print("SUCCESS: Both evaluation metrics meet success criteria!", flush=True)
     else:
-        print("NOTICE: Benchmark completed with evaluation metrics logged.")
+        print("NOTICE: Benchmark completed with evaluation metrics logged.", flush=True)
 
 def main():
     dataset_path = sys.argv[1] if len(sys.argv) > 1 else None

@@ -131,17 +131,45 @@ def chunk_pr(pr: dict) -> List[dict]:
         "related_ids": [f"issue#{num}" for num in pr.get("linked_issue_numbers", [])]
     })
 
-    comments_to_process = []
+    # Process genuine inline review comments on diff lines
+    idx_count = 1
     for c in pr.get("review_comments", []):
-        comments_to_process.append({
-            "author": c.get("author", "unknown"),
-            "body": f"Review comment on file '{c.get('path', '')}' line {c.get('line', '')}: {c.get('body', '')}",
-            "created_at": c.get("created_at")
-        })
-    for c in pr.get("comments", []):
-        comments_to_process.append(c)
+        c_author = c.get("author") or "unknown"
+        c_body = c.get("body") or ""
+        f_path = c.get("path", "")
+        line_num = c.get("line", "")
+        path_info = f" on file '{f_path}' line {line_num}" if f_path else ""
+        comment_text = f"[PR #{pr['number']} inline review comment by {c_author}{path_info}]: {c_body}"
+        if token_count(comment_text) > 400:
+            truncated = enc.decode(enc.encode(c_body)[:350])
+            comment_text = f"[PR #{pr['number']} inline review comment by {c_author}{path_info}]: {truncated}..."
+            
+        c_time = c.get("created_at")
+        if isinstance(c_time, str):
+            try:
+                c_time = datetime.fromisoformat(c_time)
+            except Exception:
+                c_time = created_at
+        else:
+            c_time = c_time or created_at
 
-    for idx, c in enumerate(comments_to_process, start=1):
+        chunk_id_comm = make_deterministic_chunk_id("pr", source_id, idx_count, comment_text)
+        chunks.append({
+            "id": chunk_id_comm,
+            "source_type": "pr",
+            "source_id": source_id,
+            "text": comment_text,
+            "timestamp": c_time,
+            "file_paths": [f_path] if f_path else [],
+            "symbols_modified": [],
+            "is_reverted": False,
+            "token_count": token_count(comment_text),
+            "related_ids": [f"issue#{num}" for num in pr.get("linked_issue_numbers", [])]
+        })
+        idx_count += 1
+
+    # Process general PR discussion comments
+    for c in pr.get("comments", []):
         c_author = c.get("author") or "unknown"
         c_body = c.get("body") or ""
         comment_text = f"[PR #{pr['number']} comment by {c_author}]: {c_body}"
@@ -158,7 +186,7 @@ def chunk_pr(pr: dict) -> List[dict]:
         else:
             c_time = c_time or created_at
 
-        chunk_id_comm = make_deterministic_chunk_id("pr", source_id, idx, comment_text)
+        chunk_id_comm = make_deterministic_chunk_id("pr", source_id, idx_count, comment_text)
         chunks.append({
             "id": chunk_id_comm,
             "source_type": "pr",
@@ -171,5 +199,6 @@ def chunk_pr(pr: dict) -> List[dict]:
             "token_count": token_count(comment_text),
             "related_ids": [f"issue#{num}" for num in pr.get("linked_issue_numbers", [])]
         })
+        idx_count += 1
 
     return chunks

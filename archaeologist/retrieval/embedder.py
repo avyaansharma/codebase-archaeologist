@@ -7,12 +7,27 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Embedder:
-    def __init__(self, voyage_key: Optional[str] = None, openai_key: Optional[str] = None):
+    def __init__(self, gemini_key: Optional[str] = None, voyage_key: Optional[str] = None, openai_key: Optional[str] = None):
+        self.gemini_keys = []
+        k1 = gemini_key or os.getenv("GEMINI_API_KEY")
+        if k1:
+            self.gemini_keys.append(k1)
+        k2 = os.getenv("GEMINI_API_KEY_SECONDARY")
+        if k2 and k2 not in self.gemini_keys:
+            self.gemini_keys.append(k2)
+        k3 = os.getenv("GOOGLE_API_KEY")
+        if k3 and k3 not in self.gemini_keys:
+            self.gemini_keys.append(k3)
+
         self.voyage_key = voyage_key or os.getenv("VOYAGE_API_KEY")
         self.openai_key = openai_key or os.getenv("OPENAI_API_KEY")
 
-        # Determine dimensions
-        if self.voyage_key:
+        # Determine dimensions & model
+        if self.gemini_keys:
+            self.model = "models/gemini-embedding-001"
+            self.dimension = 3072
+            print("Embedder initialized with Google Gemini API (models/gemini-embedding-001).")
+        elif self.voyage_key:
             self.model = "voyage-code-2"
             self.dimension = 1024
             print("Embedder initialized with Voyage API (voyage-code-2).")
@@ -30,12 +45,36 @@ class Embedder:
         if not texts:
             return []
 
-        if self.model == "voyage-code-2":
+        if self.model == "models/gemini-embedding-001":
+            return self._embed_gemini(texts)
+        elif self.model == "voyage-code-2":
             return self._embed_voyage(texts)
         elif self.model == "text-embedding-3-small":
             return self._embed_openai(texts)
         else:
             return self._embed_mock(texts)
+
+    def _embed_gemini(self, texts: List[str]) -> List[List[float]]:
+        from google import genai
+        for key in self.gemini_keys:
+            try:
+                client = genai.Client(api_key=key)
+                embeddings = []
+                for i in range(0, len(texts), 20):
+                    batch = texts[i:i + 20]
+                    res = client.models.embed_content(
+                        model=self.model,
+                        contents=batch
+                    )
+                    if hasattr(res, "embeddings") and res.embeddings:
+                        embeddings.extend([e.values for e in res.embeddings])
+                    else:
+                        embeddings.extend(self._embed_mock(batch))
+                return embeddings
+            except Exception as e:
+                print(f"Notice: Gemini embedding API key rotation on error: {e}")
+                continue
+        return self._embed_mock(texts)
 
     def _embed_voyage(self, texts: List[str]) -> List[List[float]]:
         url = "https://api.voyageai.com/v1/embeddings"
@@ -57,7 +96,6 @@ class Embedder:
             )
             with urllib.request.urlopen(req) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-                # Voyage response format: {"data": [{"embedding": [...]}, ...]}
                 embeddings = [item["embedding"] for item in result["data"]]
                 return embeddings
         except Exception as e:
@@ -84,7 +122,6 @@ class Embedder:
             )
             with urllib.request.urlopen(req) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-                # OpenAI response format: {"data": [{"embedding": [...]}, ...]}
                 embeddings = [item["embedding"] for item in result["data"]]
                 return embeddings
         except Exception as e:
@@ -96,16 +133,13 @@ class Embedder:
         import hashlib
         embeddings = []
         for text in texts:
-            # Create a simple deterministic vector of size self.dimension
             h = hashlib.sha256(text.encode("utf-8")).digest()
             vector = []
             for i in range(self.dimension):
-                # Pseudo-random float from hash bytes
                 byte_idx = (i * 7) % len(h)
                 val = (h[byte_idx] / 255.0) - 0.5
                 vector.append(val)
             
-            # Normalize vector
             norm = sum(x*x for x in vector) ** 0.5
             normalized = [x/norm for x in vector] if norm > 0 else [0.0] * self.dimension
             embeddings.append(normalized)

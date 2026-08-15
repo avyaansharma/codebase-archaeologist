@@ -7,7 +7,9 @@ CLOSES_REF = re.compile(
 )
 # Match github.com/owner/repo/issues/123 or pull/123
 FULL_URL_REF = re.compile(r'github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/(?:issues|pull)/(\d+)')
-SHA_REF = re.compile(r'\b([a-fA-F0-9]{7,40})\b')
+
+# Require at least one non-decimal hex character (a-fA-F) (§7 Fix)
+SHA_REF = re.compile(r'\b(?=[a-fA-F0-9]{7,40}\b)(?=\w*[a-fA-F])[a-fA-F0-9]{7,40}\b')
 
 def extract_refs(text: str) -> dict:
     """Returns {'closes': [ids], 'mentions': [ids], 'shas': [shas]}."""
@@ -25,65 +27,60 @@ def extract_refs(text: str) -> dict:
     }
 
 def update_cross_links(pr_list: List[dict], issue_list: List[dict]) -> Tuple[List[dict], List[dict]]:
-    """Resolves cross-links bidirectionally between fetched PRs, Issues, and commit SHAs."""
-    pr_map = {pr["number"]: pr for pr in pr_list}
-    issue_map = {issue["number"]: issue for issue in issue_list}
+    """Updates linked_issue_numbers on PRs and linked_pr_numbers on issues in-place, plus linked_commit_shas."""
+    issue_map = {i["number"]: i for i in issue_list}
+    pr_map = {p["number"]: p for p in pr_list}
 
-    # Initialize links
-    for pr in pr_list:
-        if "linked_issue_numbers" not in pr:
-            pr["linked_issue_numbers"] = []
-        if "linked_commit_shas" not in pr:
-            pr["linked_commit_shas"] = []
-            
-    for issue in issue_list:
-        if "linked_pr_numbers" not in issue:
-            issue["linked_pr_numbers"] = []
-        if "linked_commit_shas" not in issue:
-            issue["linked_commit_shas"] = []
+    for p in pr_list:
+        if "linked_issue_numbers" not in p:
+            p["linked_issue_numbers"] = []
+        if "linked_commit_shas" not in p:
+            p["linked_commit_shas"] = []
 
-    # Resolve links from PRs to Issues & Commit SHAs
-    for pr in pr_list:
-        refs = extract_refs(pr.get("title", "") + " " + (pr.get("body", "") or ""))
-        all_issue_refs = set(refs["closes"] + refs["mentions"])
-        all_shas = set(refs["shas"])
-        
-        for comment in pr.get("review_comments", []) + pr.get("comments", []):
-            c_refs = extract_refs(comment.get("body", ""))
-            all_issue_refs.update(c_refs["closes"] + c_refs["mentions"])
-            all_shas.update(c_refs["shas"])
+        all_text = f"{p.get('title', '')} {p.get('body', '')} "
+        comments_list = p.get("review_comments", []) + p.get("comments", [])
+        for c in comments_list:
+            all_text += f"{c.get('body', '')} "
 
-        for issue_num in all_issue_refs:
+        refs = extract_refs(all_text)
+        all_issues = set(p["linked_issue_numbers"]) | set(refs["closes"]) | set(refs["mentions"])
+        p["linked_issue_numbers"] = sorted(list(all_issues))
+        p["linked_commit_shas"] = sorted(list(set(p["linked_commit_shas"]) | set(refs["shas"])))
+
+        # Update back-references on issues
+        for issue_num in p["linked_issue_numbers"]:
             if issue_num in issue_map:
-                if issue_num not in pr["linked_issue_numbers"]:
-                    pr["linked_issue_numbers"].append(issue_num)
-                if pr["number"] not in issue_map[issue_num]["linked_pr_numbers"]:
-                    issue_map[issue_num]["linked_pr_numbers"].append(pr["number"])
+                target_issue = issue_map[issue_num]
+                if "linked_pr_numbers" not in target_issue:
+                    target_issue["linked_pr_numbers"] = []
+                if p["number"] not in target_issue["linked_pr_numbers"]:
+                    target_issue["linked_pr_numbers"].append(p["number"])
+                    target_issue["linked_pr_numbers"].sort()
 
-        for sha in all_shas:
-            if sha not in pr["linked_commit_shas"]:
-                pr["linked_commit_shas"].append(sha)
+    for i in issue_list:
+        if "linked_pr_numbers" not in i:
+            i["linked_pr_numbers"] = []
+        if "linked_commit_shas" not in i:
+            i["linked_commit_shas"] = []
 
-    # Resolve links from Issues to PRs & Commit SHAs
-    for issue in issue_list:
-        refs = extract_refs(issue.get("title", "") + " " + (issue.get("body", "") or ""))
-        all_pr_refs = set(refs["closes"] + refs["mentions"])
-        all_shas = set(refs["shas"])
-        
-        for comment in issue.get("comments", []):
-            c_refs = extract_refs(comment.get("body", ""))
-            all_pr_refs.update(c_refs["closes"] + c_refs["mentions"])
-            all_shas.update(c_refs["shas"])
-            
-        for pr_num in all_pr_refs:
+        all_text = f"{i.get('title', '')} {i.get('body', '')} "
+        for c in i.get("comments", []):
+            all_text += f"{c.get('body', '')} "
+
+        refs = extract_refs(all_text)
+        i["linked_commit_shas"] = sorted(list(set(i["linked_commit_shas"]) | set(refs["shas"])))
+
+        for pr_num in refs["closes"] + refs["mentions"]:
+            if pr_num not in i["linked_pr_numbers"]:
+                i["linked_pr_numbers"].append(pr_num)
+                i["linked_pr_numbers"].sort()
+
             if pr_num in pr_map:
-                if pr_num not in issue["linked_pr_numbers"]:
-                    issue["linked_pr_numbers"].append(pr_num)
-                if issue["number"] not in pr_map[pr_num]["linked_issue_numbers"]:
-                    pr_map[pr_num]["linked_issue_numbers"].append(issue["number"])
-
-        for sha in all_shas:
-            if sha not in issue["linked_commit_shas"]:
-                issue["linked_commit_shas"].append(sha)
+                target_pr = pr_map[pr_num]
+                if "linked_issue_numbers" not in target_pr:
+                    target_pr["linked_issue_numbers"] = []
+                if i["number"] not in target_pr["linked_issue_numbers"]:
+                    target_pr["linked_issue_numbers"].append(i["number"])
+                    target_pr["linked_issue_numbers"].sort()
 
     return pr_list, issue_list
