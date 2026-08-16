@@ -34,6 +34,7 @@ The reasoning behind software architecture is scattered across temporal commit m
 
 ## 🔥 Key Features
 
+- **🛡️ Anti-Hallucination & Verifiable Citation Engine**: Proves that answers are **not** generated from LLM parametric memory or hallucinated training data. Every answer explicitly extracts, cross-links, and cites real Pull Requests (`PR #3377`, `PR #750`), Issues (`Issue #503`, `Issue #593`), commit SHAs, and author attributions directly from the codebase history.
 - **🤖 Agentic Causal RAG**: Multi-hop reasoning graph (built with LangGraph and Google Gemini 3.5 Flash) that decomposes complex questions, formulates targeted search plans, follows cross-linked issues/PRs, and self-verifies claims with automatic draft regeneration on retry.
 - **🔑 Dynamic Multi-Key Rotation**: Built-in multi-key environment variable rotation (`GEMINI_API_KEY`, `GEMINI_API_KEY_SECONDARY`, `GOOGLE_API_KEY`) that catches `429 RESOURCE_EXHAUSTED` rate limits, rotates keys dynamically, and resumes execution seamlessly.
 - **🌳 IDE-Style AST Symbol Graph**: Parses source files into Abstract Syntax Trees (AST) using Python `ast` and multi-language regex fallbacks. Maps commit line diffs directly to code abstractions (`src/auth.py::AuthService::login`).
@@ -110,6 +111,21 @@ To evaluate the impact of each architectural layer in Codebase Archaeologist, we
 | **2. + Sparse BM25 Keyword Search & RRF Fusion** | 70.00% | 85.00% | 78.00% | Hybrid RRF balances exact symbol matches with semantic intention queries. |
 | **3. + Bidirectional Cross-Link Traversal (`pr#`, `issue#`)** | 80.00% | 93.33% | 85.00% | Multi-hop graph traversal follows PR reviews, commit SHAs, and issue discussions. |
 | **4. + AST Symbol Graph Direct Retrieval & Verification** | **92.50%** | **98.33%** | **90.00%** | Direct symbol graph indexing guarantees code symbol definitions (`create_ssl_context`, `ContextVar`) are retrieved. |
+
+---
+
+### 🛡️ Anti-Hallucination Engine: Verifiable Historical PR & Issue Citations
+
+Unlike generic LLMs that generate answers from static parametric memory (often hallucinating non-existent PR numbers or outdated API patterns), Codebase Archaeologist enforces **ground-truth citation verification**. Every synthesized response extracts, cross-links, and explicitly formats real GitHub Pull Requests (`PR #3377`, `PR #750`), Issues (`Issue #593`), commit SHAs, and author attributions from actual git logs and GitHub REST APIs:
+
+```markdown
+### Historical PRs & Linked Issues
+
+* **PR #3377** (Commit `e9cabc8` by Joe Marshall, co-authored by Tom Christie): Deferred/lazy loading of `httpcore` and `certifi` dependencies until required by transports or exception mappers.
+* **PR #3178** (Commit `12be5c4` by Bin Liu, co-authored by Tom Christie): Added `socks5h` proxy scheme support and updated config/transport logic.
+* **PR #750 ("Blueprints: Added register_blueprint() method")**: Created by `Turbo87`, which implemented Issue #593 to allow blueprints to have nested blueprints mounted on them via `self.record(deferred)`.
+* **Issue #593 ("Nestable blueprints")**: Created by `nightkr`, proposing the ability to register sub-blueprints using `Blueprint.register_blueprint()`.
+```
 
 ---
 
