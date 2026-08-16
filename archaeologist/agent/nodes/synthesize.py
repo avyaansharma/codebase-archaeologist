@@ -14,9 +14,10 @@ Retrieved Evidence Chunks:
 
 Guidelines:
 1. Provide a direct, causal answer explaining WHY the code exists or changed in its current form.
-2. Cite specific commit SHAs, PR numbers (e.g. #123), and authors where applicable.
-3. Highlight any revert history, bug fixes, or linked issues discovered in the trace.
-4. Keep the tone professional, concise, and technically precise.
+2. MANDATORY PR/ISSUE CITATIONS: You MUST explicitly cite all relevant Pull Requests (e.g. PR #123, #456), linked Issues (e.g. Issue #789), commit SHAs, and authors present in the evidence.
+3. Dedicated References Section: If linked PRs or Issues are present in the evidence, you MUST include a dedicated section titled "### Historical PRs & Linked Issues" explicitly listing each PR/Issue number, author, and summary.
+4. Highlight any revert history, bug fixes, or key discussions discovered in the trace.
+5. Keep the tone professional, concise, and technically precise.
 
 Causal Archaeology Answer:"""
 
@@ -33,7 +34,13 @@ def synthesize_node(state: AgentState) -> dict:
 
     try:
         client = GeminiClientWrapper(api_key=api_key)
-        evidence_text = "\n\n".join([f"Source: {c['source_type']} ({c['source_id']})\nText: {c['text']}" for c in retrieved[:20]])
+        evidence_lines = []
+        for c in retrieved[:20]:
+            rel_ids = c.get("related_ids", [])
+            rel_str = f" | Linked PRs/Issues: {rel_ids}" if rel_ids else ""
+            evidence_lines.append(f"Source: {c.get('source_type', 'commit')} ({c.get('source_id', '')}){rel_str}\nText: {c.get('text', '')}")
+        evidence_text = "\n\n".join(evidence_lines)
+
         prompt = SYNTHESIZE_PROMPT.format(question=question, draft_answer=draft, evidence=evidence_text)
         
         response_text = client.generate_text(
@@ -46,4 +53,5 @@ def synthesize_node(state: AgentState) -> dict:
     except Exception as e:
         print(f"Error in synthesize_node: {e}", file=sys.stderr)
         return {"response": draft or f"Error synthesizing response: {e}"}
+
 

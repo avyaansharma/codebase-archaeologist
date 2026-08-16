@@ -9,7 +9,7 @@ Question: {question}
 Evidence Chunks:
 {evidence}
 
-Draft a clear, factual 2-4 sentence explanation answering the question using only the evidence provided. Include specific PR/commit citations if present.
+Draft a clear, factual 2-4 sentence explanation answering the question using only the evidence provided. MANDATORY: You MUST explicitly cite all specific PR numbers (e.g. PR #123), linked issues (e.g. Issue #456), and commit SHAs present in the evidence.
 
 Draft Answer:"""
 
@@ -45,7 +45,12 @@ def verify_node(state: AgentState) -> dict:
         }
 
     client = GeminiClientWrapper(api_key=api_key)
-    evidence_text = "\n\n".join([f"[{c['id']}] {c['text']}" for c in retrieved[:20]])
+    evidence_lines = []
+    for c in retrieved[:20]:
+        rel_ids = c.get("related_ids", [])
+        rel_str = f" [Linked PRs/Issues: {rel_ids}]" if rel_ids else ""
+        evidence_lines.append(f"[{c.get('id', '')}]{rel_str} {c.get('text', '')}")
+    evidence_text = "\n\n".join(evidence_lines)
 
     # 1. Force Draft Answer regeneration if missing or if previous verification failed (§1 Fix)
     if not draft or not verification_passed:
