@@ -54,14 +54,18 @@ def extract_symbols_from_code(code_text: str, file_path: str) -> List[Dict[str, 
                         "symbol_id": f"{file_path}:{node.name}",
                         "name": node.name,
                         "kind": "function",
-                        "line_number": node.lineno
+                        "line_number": node.lineno,
+                        "start_line": node.lineno,
+                        "end_line": getattr(node, "end_lineno", node.lineno + 20)
                     })
                 elif isinstance(node, ast.ClassDef):
                     symbols.append({
                         "symbol_id": f"{file_path}:{node.name}",
                         "name": node.name,
                         "kind": "class",
-                        "line_number": node.lineno
+                        "line_number": node.lineno,
+                        "start_line": node.lineno,
+                        "end_line": getattr(node, "end_lineno", node.lineno + 50)
                     })
             return symbols
         except Exception:
@@ -75,7 +79,8 @@ def extract_symbols_from_code(code_text: str, file_path: str) -> List[Dict[str, 
             "symbol_id": f"{file_path}:{fn_name}",
             "name": fn_name,
             "kind": "function",
-            "line_number": line_no
+            "line_number": line_no,
+            "start_line": line_no
         })
 
     for match in CLASS_REGEX.finditer(code_text):
@@ -85,7 +90,8 @@ def extract_symbols_from_code(code_text: str, file_path: str) -> List[Dict[str, 
             "symbol_id": f"{file_path}:{cls_name}",
             "name": cls_name,
             "kind": "class",
-            "line_number": line_no
+            "line_number": line_no,
+            "start_line": line_no
         })
 
     return symbols
@@ -98,50 +104,73 @@ def map_lines_to_symbols(symbols: List[Dict[str, Any]], modified_lines: List[int
     lines_set = set(modified_lines)
     touched_symbols = []
 
-    sorted_syms = sorted(symbols, key=lambda s: s.get("line_number") or s.get("start_line", 0))
+    sorted_syms = sorted(symbols, key=lambda s: s.get("start_line", s.get("line_number", 0)))
     for i, sym in enumerate(sorted_syms):
-        start_line = sym.get("line_number") or sym.get("start_line", 0)
-        end_line = sym.get("end_line") or (
-            sorted_syms[i + 1].get("line_number") or sorted_syms[i + 1].get("start_line", start_line + 50) - 1 
-            if i + 1 < len(sorted_syms) 
-            else start_line + 50
-        )
+        start_line = sym.get("start_line", sym.get("line_number", 0))
+        if "end_line" in sym and sym["end_line"] is not None:
+            end_line = sym["end_line"]
+        else:
+            end_line = (
+                sorted_syms[i + 1].get("start_line", sorted_syms[i + 1].get("line_number", start_line + 50)) - 1 
+                if i + 1 < len(sorted_syms) 
+                else start_line + 50
+            )
         
         sym_lines = set(range(start_line, end_line + 1))
         if sym_lines.intersection(lines_set):
-            touched_symbols.append(sym["symbol_id"])
+            if sym["symbol_id"] not in touched_symbols:
+                touched_symbols.append(sym["symbol_id"])
 
     return touched_symbols
 
-def extract_modified_line_numbers_from_diff(diff_text: str) -> Dict[str, List[int]]:
-    """Parses a unified git diff and returns a dict mapping file paths to modified line numbers (additions and deletions)."""
+class DiffLineBucket(dict):
+    """Dictionary holding 'added' and 'deleted' line numbers, with backward-compatible list operations."""
+    def __init__(self, added: Optional[List[int]] = None, deleted: Optional[List[int]] = None):
+        super().__init__({"added": added or [], "deleted": deleted or []})
+
+    def __contains__(self, item):
+        if isinstance(item, str):
+            return super().__contains__(item)
+        return item in self["added"] or item in self["deleted"]
+
+    def __iter__(self):
+        combined = set(self["added"]) | set(self["deleted"])
+        return iter(sorted(list(combined)))
+
+def extract_modified_line_numbers_from_diff(diff_text: str) -> Dict[str, DiffLineBucket]:
+    """Parses a unified git diff and returns a dict mapping file paths to DiffLineBucket (added and deleted line numbers)."""
     file_lines = {}
     current_file = None
     old_line = 0
     new_line = 0
 
-    hunk_header = re.compile(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@')
+    hunk_header = re.compile(r'^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@')
+    new_header = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@')
 
     for line in diff_text.splitlines():
         if line.startswith('+++ '):
             target = line[4:].strip()
             current_file = target[2:] if target.startswith('b/') else None
             if current_file and current_file not in file_lines:
-                file_lines[current_file] = []
+                file_lines[current_file] = DiffLineBucket([], [])
         elif line.startswith('@@'):
-            m = hunk_header.match(line)
-            if m:
-                old_line = int(m.group(1))
-                new_line = int(m.group(2))
+            m_old = re.search(r'-(\d+)', line)
+            m_new = re.search(r'\+(\d+)', line)
+            if m_old:
+                old_line = int(m_old.group(1))
+            if m_new:
+                new_line = int(m_new.group(1))
         elif current_file:
             if line.startswith('+') and not line.startswith('+++'):
-                file_lines[current_file].append(new_line)
+                file_lines[current_file]["added"].append(new_line)
                 new_line += 1
             elif line.startswith('-') and not line.startswith('---'):
-                file_lines[current_file].append(old_line)
+                file_lines[current_file]["deleted"].append(old_line)
                 old_line += 1
             elif not line.startswith('\\'):
                 old_line += 1
                 new_line += 1
 
     return file_lines
+
+

@@ -1,5 +1,6 @@
 import re
-from typing import List, Set, Tuple
+from typing import List, Set, Tuple, Any, Optional
+
 
 ISSUE_REF = re.compile(r'#(\d+)')
 CLOSES_REF = re.compile(
@@ -26,8 +27,84 @@ def extract_refs(text: str) -> dict:
         "shas": sorted(list(shas))
     }
 
-def update_cross_links(pr_list: List[dict], issue_list: List[dict]) -> Tuple[List[dict], List[dict]]:
-    """Updates linked_issue_numbers on PRs and linked_pr_numbers on issues in-place, plus linked_commit_shas."""
+def update_cross_links(session_or_prs: Any, issue_list: Optional[List[dict]] = None) -> Any:
+    """Updates linked_issue_numbers on PRs and linked_pr_numbers on issues in-place, plus linked_commit_shas.
+    Supports either an ORM Session: update_cross_links(session)
+    or dict lists: update_cross_links(pr_list, issue_list)
+    """
+    if issue_list is None and hasattr(session_or_prs, "exec"):
+        session = session_or_prs
+        from sqlmodel import select
+        from archaeologist.storage.models import PullRequest, Issue
+
+        all_prs = session.exec(select(PullRequest)).all()
+        all_issues = session.exec(select(Issue)).all()
+
+        pr_map = {p.number: p for p in all_prs}
+        issue_map = {i.number: i for i in all_issues}
+
+        for p in all_prs:
+            linked_issues = set(p.linked_issue_numbers or [])
+            linked_shas = set(p.linked_commit_shas or [])
+
+            all_text = f"{p.title or ''} {p.body or ''} "
+            for c in (p.review_comments or []) + (p.comments or []):
+                if isinstance(c, dict):
+                    all_text += f"{c.get('body', '')} "
+                elif isinstance(c, str):
+                    all_text += f"{c} "
+
+            refs = extract_refs(all_text)
+            linked_issues.update(refs["closes"])
+            linked_issues.update(refs["mentions"])
+            linked_shas.update(refs["shas"])
+
+            p.linked_issue_numbers = sorted(list(linked_issues))
+            p.linked_commit_shas = sorted(list(linked_shas))
+            session.add(p)
+
+            for i_num in p.linked_issue_numbers:
+                if i_num in issue_map:
+                    target_issue = issue_map[i_num]
+                    existing_prs = set(target_issue.linked_pr_numbers or [])
+                    existing_prs.add(p.number)
+                    target_issue.linked_pr_numbers = sorted(list(existing_prs))
+                    session.add(target_issue)
+
+        for i in all_issues:
+            linked_prs = set(i.linked_pr_numbers or [])
+            linked_shas = set(i.linked_commit_shas or [])
+
+            all_text = f"{i.title or ''} {i.body or ''} "
+            for c in i.comments or []:
+                if isinstance(c, dict):
+                    all_text += f"{c.get('body', '')} "
+                elif isinstance(c, str):
+                    all_text += f"{c} "
+
+            refs = extract_refs(all_text)
+            linked_shas.update(refs["shas"])
+            for pr_num in refs["closes"] + refs["mentions"]:
+                linked_prs.add(pr_num)
+                if pr_num in pr_map:
+                    target_pr = pr_map[pr_num]
+                    existing_issues = set(target_pr.linked_issue_numbers or [])
+                    existing_issues.add(i.number)
+                    target_pr.linked_issue_numbers = sorted(list(existing_issues))
+                    session.add(target_pr)
+
+            i.linked_pr_numbers = sorted(list(linked_prs))
+            i.linked_commit_shas = sorted(list(linked_shas))
+            session.add(i)
+
+        session.commit()
+        return all_prs, all_issues
+
+    # Fallback for dict lists
+    pr_list = session_or_prs
+    if issue_list is None:
+        issue_list = []
+
     issue_map = {i["number"]: i for i in issue_list}
     pr_map = {p["number"]: p for p in pr_list}
 
@@ -40,7 +117,10 @@ def update_cross_links(pr_list: List[dict], issue_list: List[dict]) -> Tuple[Lis
         all_text = f"{p.get('title', '')} {p.get('body', '')} "
         comments_list = p.get("review_comments", []) + p.get("comments", [])
         for c in comments_list:
-            all_text += f"{c.get('body', '')} "
+            if isinstance(c, dict):
+                all_text += f"{c.get('body', '')} "
+            elif isinstance(c, str):
+                all_text += f"{c} "
 
         refs = extract_refs(all_text)
         all_issues = set(p["linked_issue_numbers"]) | set(refs["closes"]) | set(refs["mentions"])
@@ -65,7 +145,10 @@ def update_cross_links(pr_list: List[dict], issue_list: List[dict]) -> Tuple[Lis
 
         all_text = f"{i.get('title', '')} {i.get('body', '')} "
         for c in i.get("comments", []):
-            all_text += f"{c.get('body', '')} "
+            if isinstance(c, dict):
+                all_text += f"{c.get('body', '')} "
+            elif isinstance(c, str):
+                all_text += f"{c} "
 
         refs = extract_refs(all_text)
         i["linked_commit_shas"] = sorted(list(set(i["linked_commit_shas"]) | set(refs["shas"])))
@@ -84,3 +167,4 @@ def update_cross_links(pr_list: List[dict], issue_list: List[dict]) -> Tuple[Lis
                     target_pr["linked_issue_numbers"].sort()
 
     return pr_list, issue_list
+

@@ -26,8 +26,8 @@ def follow_links_node(state: AgentState) -> dict:
     new_chunks = []
     try:
         for ref in related_ids_to_fetch:
-            # Query local metadata DB for chunk by source_id
-            stmt = select(Chunk).where(Chunk.source_id == ref)
+            clean_ref = ref.split("#")[-1].split(":")[-1] if ("#" in ref or ":" in ref) else ref
+            stmt = select(Chunk).where((Chunk.source_id == ref) | (Chunk.source_id == clean_ref))
             results = db_session.exec(stmt).all()
             for c in results:
                 if c.id not in seen_ids:
@@ -44,6 +44,7 @@ def follow_links_node(state: AgentState) -> dict:
                         "rrf_score": 0.0  # reference hit has no initial search score
                     })
                     seen_ids.add(c.id)
+
     finally:
         db_session.close()
 

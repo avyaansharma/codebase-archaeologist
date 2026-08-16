@@ -60,23 +60,28 @@ class IngestionPipeline:
                 diff_text = get_commit_diff(self.repo_path, c_data["sha"])
                 if diff_text:
                     modified_lines_map = extract_modified_line_numbers_from_diff(diff_text)
-                    for fpath, lines in modified_lines_map.items():
-                        code_text = get_git_file_content(self.repo_path, c_data["sha"], fpath)
-                        if not code_text:
+                    for fpath, line_buckets in modified_lines_map.items():
+                        added_lines = line_buckets.get("added", [])
+                        deleted_lines = line_buckets.get("deleted", [])
+                        touched_syms = []
+
+                        # Map added lines against post-commit file content
+                        post_code_text = get_git_file_content(self.repo_path, c_data["sha"], fpath)
+                        if not post_code_text:
                             resolved_path = resolve_file_path(self.repo_path, fpath)
                             if resolved_path:
                                 try:
                                     with open(resolved_path, "r", encoding="utf-8", errors="ignore") as f:
-                                        code_text = f.read()
+                                        post_code_text = f.read()
                                 except Exception:
-                                    code_text = None
+                                    post_code_text = None
 
-                        if code_text:
-                            file_symbols = extract_symbols_from_code(code_text, fpath)
-                            touched_syms = map_lines_to_symbols(file_symbols, lines)
-                            symbols_modified.extend(touched_syms)
+                        if post_code_text:
+                            post_symbols = extract_symbols_from_code(post_code_text, fpath)
+                            if added_lines:
+                                touched_syms.extend(map_lines_to_symbols(post_symbols, added_lines))
 
-                            for sym in file_symbols:
+                            for sym in post_symbols:
                                 sym_obj = session.get(SymbolIndex, sym["symbol_id"])
                                 if not sym_obj:
                                     sym_obj = SymbolIndex(
@@ -84,12 +89,26 @@ class IngestionPipeline:
                                         file_path=fpath,
                                         symbol_name=sym["name"],
                                         kind=sym["kind"],
-                                        commit_count=1 if sym["symbol_id"] in touched_syms else 0
+                                        commit_count=0
                                     )
                                     session.add(sym_obj)
-                                elif sym["symbol_id"] in touched_syms:
-                                    sym_obj.commit_count += 1
-                                    session.add(sym_obj)
+
+                        # Map deleted lines against pre-commit file content
+                        if deleted_lines:
+                            pre_code_text = get_git_file_content(self.repo_path, f"{c_data['sha']}^", fpath)
+                            if pre_code_text:
+                                pre_symbols = extract_symbols_from_code(pre_code_text, fpath)
+                                touched_syms.extend(map_lines_to_symbols(pre_symbols, deleted_lines))
+
+                        unique_touched = sorted(list(set(touched_syms)))
+                        symbols_modified.extend(unique_touched)
+
+                        for sym_id in unique_touched:
+                            sym_obj = session.get(SymbolIndex, sym_id)
+                            if sym_obj:
+                                sym_obj.commit_count += 1
+                                session.add(sym_obj)
+
 
                 commit_obj = Commit(
                     sha=c_data["sha"],

@@ -14,8 +14,14 @@ def advance_sub_question_node(state: AgentState) -> dict:
 
 def increment_retry_node(state: AgentState) -> dict:
     retries = state.get("retry_count", 0)
-    print(f"Agent: Verification failed. Incrementing retry count to {retries + 1}...", file=sys.stderr)
-    return {"retry_count": retries + 1}
+    print(f"Agent: Verification failed. Incrementing retry count to {retries + 1} and resetting sub-question pipeline...", file=sys.stderr)
+    return {
+        "retry_count": retries + 1,
+        "current_sub_question_index": 0,
+        "draft_answer": None,
+        "verification_passed": False
+    }
+
 
 # Create the graph workflow
 workflow = StateGraph(AgentState)

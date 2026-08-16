@@ -49,6 +49,12 @@ def chunk_issue(issue: dict) -> List[dict]:
     source_id = f"issue#{issue['number']}"
     author_name = issue.get("author") or "unknown"
     
+    related_ids = [f"pr#{num}" for num in issue.get("linked_pr_numbers", [])]
+    for sha in issue.get("linked_commit_shas", []):
+        c_ref = f"commit#{sha}"
+        if c_ref not in related_ids:
+            related_ids.append(c_ref)
+
     body_text = issue.get("body") or ""
     issue_start = f"[Issue #{issue['number']} - '{issue['title']}' created by {author_name}]\n{body_text}"
     if token_count(issue_start) > 400:
@@ -68,7 +74,7 @@ def chunk_issue(issue: dict) -> List[dict]:
         "symbols_modified": [],
         "is_reverted": False,
         "token_count": token_count(issue_start),
-        "related_ids": [f"pr#{num}" for num in issue.get("linked_pr_numbers", [])]
+        "related_ids": related_ids
     })
 
     for idx, c in enumerate(issue.get("comments", []), start=1):
@@ -99,7 +105,7 @@ def chunk_issue(issue: dict) -> List[dict]:
             "symbols_modified": [],
             "is_reverted": False,
             "token_count": token_count(comment_text),
-            "related_ids": [f"pr#{num}" for num in issue.get("linked_pr_numbers", [])]
+            "related_ids": related_ids
         })
 
     return chunks
@@ -109,6 +115,16 @@ def chunk_pr(pr: dict) -> List[dict]:
     source_id = f"pr#{pr['number']}"
     author_name = pr.get("author") or "unknown"
     
+    related_ids = [f"issue#{num}" for num in pr.get("linked_issue_numbers", [])]
+    if pr.get("merged_commit_sha"):
+        m_ref = f"commit#{pr['merged_commit_sha']}"
+        if m_ref not in related_ids:
+            related_ids.append(m_ref)
+    for sha in pr.get("linked_commit_shas", []):
+        c_ref = f"commit#{sha}"
+        if c_ref not in related_ids:
+            related_ids.append(c_ref)
+
     body_text = pr.get("body") or ""
     pr_start = f"[PR #{pr['number']} - '{pr['title']}' created by {author_name}]\n{body_text}"
     if token_count(pr_start) > 400:
@@ -128,7 +144,7 @@ def chunk_pr(pr: dict) -> List[dict]:
         "symbols_modified": [],
         "is_reverted": False,
         "token_count": token_count(pr_start),
-        "related_ids": [f"issue#{num}" for num in pr.get("linked_issue_numbers", [])]
+        "related_ids": related_ids
     })
 
     # Process genuine inline review comments on diff lines
@@ -164,7 +180,7 @@ def chunk_pr(pr: dict) -> List[dict]:
             "symbols_modified": [],
             "is_reverted": False,
             "token_count": token_count(comment_text),
-            "related_ids": [f"issue#{num}" for num in pr.get("linked_issue_numbers", [])]
+            "related_ids": related_ids
         })
         idx_count += 1
 
@@ -197,8 +213,9 @@ def chunk_pr(pr: dict) -> List[dict]:
             "symbols_modified": [],
             "is_reverted": False,
             "token_count": token_count(comment_text),
-            "related_ids": [f"issue#{num}" for num in pr.get("linked_issue_numbers", [])]
+            "related_ids": related_ids
         })
         idx_count += 1
 
     return chunks
+

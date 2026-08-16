@@ -49,14 +49,13 @@ class BM25Index:
                 
             chunk = self.chunks[idx]
             
-            # Flexible file_path filter matching (matches chunk.file_paths OR text contents)
+            # Structural file_path filter matching against chunk.file_paths
             if file_path:
                 fp_lower = file_path.lower()
-                fp_base = os.path.basename(fp_lower)
                 c_paths = [p.lower() for p in chunk.get("file_paths", [])]
-                text_lower = chunk.get("text", "").lower()
-                if not (any(fp_lower in p or os.path.basename(p) == fp_lower for p in c_paths) or fp_base in text_lower):
+                if not any(fp_lower in p or p.endswith(fp_lower) or fp_lower.endswith(p) for p in c_paths):
                     continue
+
 
             if is_reverted is not None and chunk.get("is_reverted") != is_reverted:
                 continue

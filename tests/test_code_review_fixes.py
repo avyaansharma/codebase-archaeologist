@@ -85,3 +85,50 @@ def test_vector_store_fallback_flag():
     assert isinstance(store.is_in_memory_fallback, bool)
     store.close()
 
+def test_update_cross_links_accepts_orm_session():
+    from archaeologist.storage.db import init_db, get_session
+    from archaeologist.storage.models import PullRequest, Issue
+    from archaeologist.ingestion.link_resolver import update_cross_links
+    
+    init_db()
+    session = get_session()
+
+    
+    from datetime import datetime
+    pr = PullRequest(number=9910, title="Fix issue #9920", body="Closes #9920", author="alice", state="closed", created_at=datetime.utcnow())
+
+    issue = Issue(number=9920, title="Bug in auth", body="Found bug abc12345", state="open", author="bob", created_at=datetime.utcnow())
+    session.add(pr)
+    session.add(issue)
+    session.commit()
+
+    
+    update_cross_links(session)
+    
+    updated_pr = session.get(PullRequest, 9910)
+    updated_issue = session.get(Issue, 9920)
+    
+    assert 9920 in updated_pr.linked_issue_numbers
+    assert 9910 in updated_issue.linked_pr_numbers
+    session.close()
+
+def test_increment_retry_resets_sub_question_index():
+    from archaeologist.agent.graph import increment_retry_node
+    
+    state = {
+        "retry_count": 0,
+        "current_sub_question_index": 3,
+        "draft_answer": "unverified answer",
+        "verification_passed": False
+    }
+    new_state = increment_retry_node(state)
+    assert new_state["retry_count"] == 1
+    assert new_state["current_sub_question_index"] == 0
+    assert new_state["draft_answer"] is None
+
+def test_escape_like_central_security_helper():
+    from archaeologist.utils.security import escape_like
+    assert escape_like("get_user") == "get\\_user"
+    assert escape_like("100%") == "100\\%"
+
+

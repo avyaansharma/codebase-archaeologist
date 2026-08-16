@@ -27,3 +27,10 @@ def sanitize_file_path(base_repo_path: str, user_path: str) -> str:
     if joined != abs_base and not joined.startswith(abs_base + os.sep):
         raise ValueError(f"Path traversal detected: '{user_path}' attempts to leave base directory '{abs_base}'.")
     return os.path.relpath(joined, abs_base)
+
+def escape_like(text: str) -> str:
+    """Escapes special SQL LIKE wildcard characters % and _."""
+    if not text:
+        return ""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+

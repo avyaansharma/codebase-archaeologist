@@ -83,12 +83,18 @@ def search_node(state: AgentState) -> dict:
         # 3. AST Symbol Graph Direct Retrieval
         symbol_matches = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]{3,})\b', query)
         if symbol_matches:
+            from archaeologist.utils.security import escape_like
             with get_session_context() as session:
                 for sym in symbol_matches:
                     if sym.lower() in ("http", "httpx", "python", "code", "file", "path", "test", "class", "func", "defs", "does", "how", "what", "where", "when", "why"):
                         continue
-                    stmt = select(Chunk).where(Chunk.symbols_modified.like(f"%{sym}%"))
-                    sym_chunks = session.exec(stmt).all()
+                    escaped_sym = escape_like(sym)
+                    stmt = select(Chunk).where(Chunk.symbols_modified.like(f"%{escaped_sym}%"))
+                    raw_chunks = session.exec(stmt).all()
+                    sym_chunks = [
+                        c for c in raw_chunks 
+                        if any(sym.lower() in str(s).lower() for s in (c.symbols_modified or []))
+                    ]
                     for c in sym_chunks:
                         if c.id not in seen_dense_ids:
                             seen_dense_ids.add(c.id)
@@ -107,6 +113,7 @@ def search_node(state: AgentState) -> dict:
                                     "is_reverted": c.is_reverted
                                 }
                             })
+
 
     vector_store.close()
 

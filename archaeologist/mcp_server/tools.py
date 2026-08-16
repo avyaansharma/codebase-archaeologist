@@ -213,8 +213,10 @@ def blame_explain_tool(
                     "is_revert": c.is_revert
                 })
 
-    question = f"Explain the origin and history of lines {line_start}-{line_end} in {clean_file_path} based on these commits: {json.dumps(commits_data)}"
-    explanation = ask_tool(question)
+    gemini = GeminiClientWrapper()
+    prompt = f"Analyze the following commits and explain why lines {line_start}-{line_end} in {clean_file_path} were created or modified:\n{json.dumps(commits_data, indent=2)}"
+    explanation = gemini.generate_text(prompt)
+    
     return {
         "file_path": clean_file_path,
         "line_range": f"{line_start}-{line_end}",
@@ -240,6 +242,7 @@ def repo_hotspots_tool(top_n: int = 15) -> List[Dict[str, Any]]:
 def repo_ownership_tool(file_path: Optional[str] = None) -> Dict[str, Any]:
     """Calculates author percentage contribution distribution and bus factor risk."""
     author_counts = Counter()
+    file_author_counts = defaultdict(Counter)
     total_commits = 0
     with get_session_context() as session:
         commits = session.exec(select(Commit)).all()
@@ -248,6 +251,8 @@ def repo_ownership_tool(file_path: Optional[str] = None) -> Dict[str, Any]:
             if not file_path or file_path in files:
                 author_counts[c.author_name] += 1
                 total_commits += 1
+            for f in files:
+                file_author_counts[f][c.author_name] += 1
 
     distribution = {}
     for author, count in author_counts.items():
@@ -260,12 +265,28 @@ def repo_ownership_tool(file_path: Optional[str] = None) -> Dict[str, Any]:
     max_pct = max([data["percentage"] for data in distribution.values()]) if distribution else 0.0
     risk = "HIGH (Single Author Dominance)" if max_pct > 60.0 else "NORMAL"
 
-    return {
+    res = {
         "target_file": file_path or "GLOBAL REPOSITORY",
         "total_commits": total_commits,
         "author_distribution": distribution,
         "bus_factor_risk": risk
     }
+
+    if not file_path:
+        file_breakdown = {}
+        for f, counts in list(file_author_counts.items())[:20]:
+            f_total = sum(counts.values())
+            top_author, top_cnt = counts.most_common(1)[0]
+            f_pct = round((top_cnt / f_total) * 100, 2) if f_total > 0 else 0
+            file_breakdown[f] = {
+                "top_author": top_author,
+                "top_author_pct": f_pct,
+                "bus_factor_risk": "HIGH" if f_pct > 60.0 else "NORMAL"
+            }
+        res["per_file_breakdown"] = file_breakdown
+
+    return res
+
 
 def change_coupling_tool(min_co_commits: int = 2, top_n: int = 15) -> List[Dict[str, Any]]:
     """Identifies pairs of files that frequently change together in the same commit."""
