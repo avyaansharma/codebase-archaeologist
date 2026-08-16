@@ -33,7 +33,7 @@ def synthesize_node(state: AgentState) -> dict:
 
     try:
         client = GeminiClientWrapper(api_key=api_key)
-        evidence_text = "\n\n".join([f"Source: {c['source_type']} ({c['source_id']})\nText: {c['text']}" for c in retrieved[:12]])
+        evidence_text = "\n\n".join([f"Source: {c['source_type']} ({c['source_id']})\nText: {c['text']}" for c in retrieved[:20]])
         prompt = SYNTHESIZE_PROMPT.format(question=question, draft_answer=draft, evidence=evidence_text)
         
         response_text = client.generate_text(

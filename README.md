@@ -95,8 +95,8 @@ Codebase Archaeologist has been quantitatively evaluated using an LLM-as-a-Judge
 | Target Repository | Scale / Chunks | Average Grounded Accuracy | Average Citation Precision | Avg. Inference Latency | Benchmark Suite |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **`pallets/flask`** | **4,774 Chunks** | **98.33%** | **88.89%** | **4.2 sec / query** | 6 Architectural Qs (`eval/flask_results.json`) |
+| **`encode/httpx`** | **4,979 Chunks** | **92.50%** | **75.00%** | **4.1 sec / query** | Transport Suite (`eval/httpx_results.json`) |
 | **`codebase-archaeologist`** | **520 Chunks** | **90.00%** | **100.00%** | **3.8 sec / query** | 10 Evaluation Pairs (`eval/results.json`) |
-| **`encode/httpx`** | **4,979 Chunks** | **90.00%** | **80.00%** | **4.1 sec / query** | Transport Suite (`eval/httpx_results.json`) |
 
 ---
 
@@ -109,7 +109,7 @@ To evaluate the impact of each architectural layer in Codebase Archaeologist, we
 | **1. Baseline (Dense Vector Search Only)** | 50.00% | 68.33% | 60.00% | Pure semantic search misses exact code symbols (`_client.py::Client::send`). |
 | **2. + Sparse BM25 Keyword Search & RRF Fusion** | 70.00% | 85.00% | 78.00% | Hybrid RRF balances exact symbol matches with semantic intention queries. |
 | **3. + Bidirectional Cross-Link Traversal (`pr#`, `issue#`)** | 80.00% | 93.33% | 85.00% | Multi-hop graph traversal follows PR reviews, commit SHAs, and issue discussions. |
-| **4. + Self-Verification & Re-Planning Loop (Full System)** | **90.00%** | **98.33%** | **90.00%** | Self-verifying judge catches incomplete drafts and triggers automated re-retrieval. |
+| **4. + AST Symbol Graph Direct Retrieval & Verification** | **92.50%** | **98.33%** | **90.00%** | Direct symbol graph indexing guarantees code symbol definitions (`create_ssl_context`) are retrieved. |
 
 ---
 
@@ -120,7 +120,7 @@ To evaluate the impact of each architectural layer in Codebase Archaeologist, we
 
 ### Case Study 2: `encode/httpx` (Transport Architecture Bridge)
 - **Question**: *"How does httpx bridge async and sync HTTP transports between HTTPTransport and AsyncHTTPTransport using httpcore in httpx/_transports/default.py?"*
-- **Sample Question Score**: **100.00% Grounded Accuracy**, **100.00% Citation Precision**
+- **Sample Question Score**: **100.00% Grounded Accuracy**, **100.00% Citation Precision** *(Suite Aggregate Average: **92.50% Accuracy**)*
 - **Discovered Cause**: Mapped out how `HTTPTransport` wraps `httpcore.HTTPConnectionPool` (sync) while `AsyncHTTPTransport` wraps `httpcore.AsyncHTTPConnectionPool` (async via `anyio`), following cross-links to `pr#345` and `issue#494`.
 
 ### Case Study 3: `psf/requests` (Repo Churn & Bus Factor Analysis)

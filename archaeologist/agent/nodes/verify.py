@@ -45,7 +45,7 @@ def verify_node(state: AgentState) -> dict:
         }
 
     client = GeminiClientWrapper(api_key=api_key)
-    evidence_text = "\n\n".join([f"[{c['id']}] {c['text']}" for c in retrieved[:12]])
+    evidence_text = "\n\n".join([f"[{c['id']}] {c['text']}" for c in retrieved[:20]])
 
     # 1. Force Draft Answer regeneration if missing or if previous verification failed (§1 Fix)
     if not draft or not verification_passed:

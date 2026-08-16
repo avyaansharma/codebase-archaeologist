@@ -80,6 +80,34 @@ def search_node(state: AgentState) -> dict:
         except Exception as e:
             print(f"Error in dense search: {e}", file=sys.stderr)
 
+        # 3. AST Symbol Graph Direct Retrieval
+        symbol_matches = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]{3,})\b', query)
+        if symbol_matches:
+            with get_session_context() as session:
+                for sym in symbol_matches:
+                    if sym.lower() in ("http", "httpx", "python", "code", "file", "path", "test", "class", "func", "defs", "does", "how", "what", "where", "when", "why"):
+                        continue
+                    stmt = select(Chunk).where(Chunk.symbols_modified.like(f"%{sym}%"))
+                    sym_chunks = session.exec(stmt).all()
+                    for c in sym_chunks:
+                        if c.id not in seen_dense_ids:
+                            seen_dense_ids.add(c.id)
+                            all_dense_hits.append({
+                                "id": c.id,
+                                "score": 1.5,
+                                "payload": {
+                                    "id": c.id,
+                                    "source_type": c.source_type,
+                                    "source_id": c.source_id,
+                                    "text": c.text,
+                                    "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, "isoformat") else c.timestamp,
+                                    "file_paths": c.file_paths,
+                                    "symbols_modified": c.symbols_modified,
+                                    "related_ids": c.related_ids,
+                                    "is_reverted": c.is_reverted
+                                }
+                            })
+
     vector_store.close()
 
     # SQLite direct text fallback if dense vector hits are empty
