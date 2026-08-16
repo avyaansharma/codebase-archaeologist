@@ -1,7 +1,8 @@
 import os
 import re
 
-SHA_REGEX = re.compile(r"^[0-9a-fA-F]{7,40}$")
+SHA_REGEX = re.compile(r"^[0-9a-fA-F]{7,40}(\^\d*|~\d*)?$")
+
 
 def validate_repo_path(repo_path: str) -> str:
     """Validates that repo_path exists and is a valid directory."""

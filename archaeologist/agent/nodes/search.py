@@ -88,8 +88,8 @@ def search_node(state: AgentState) -> dict:
                 for sym in symbol_matches:
                     if sym.lower() in ("http", "httpx", "python", "code", "file", "path", "test", "class", "func", "defs", "does", "how", "what", "where", "when", "why"):
                         continue
-                    escaped_sym = escape_like(sym)
-                    stmt = select(Chunk).where(Chunk.symbols_modified.like(f"%{escaped_sym}%"))
+                    stmt = select(Chunk).where(Chunk.symbols_modified.like(f"%{escaped_sym}%", escape="\\"))
+
                     raw_chunks = session.exec(stmt).all()
                     sym_chunks = [
                         c for c in raw_chunks 

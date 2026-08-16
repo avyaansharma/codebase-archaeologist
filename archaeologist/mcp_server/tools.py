@@ -274,16 +274,19 @@ def repo_ownership_tool(file_path: Optional[str] = None) -> Dict[str, Any]:
 
     if not file_path:
         file_breakdown = {}
-        for f, counts in list(file_author_counts.items())[:20]:
+        sorted_files = sorted(file_author_counts.items(), key=lambda item: sum(item[1].values()), reverse=True)
+        for f, counts in sorted_files[:20]:
             f_total = sum(counts.values())
             top_author, top_cnt = counts.most_common(1)[0]
             f_pct = round((top_cnt / f_total) * 100, 2) if f_total > 0 else 0
             file_breakdown[f] = {
+                "total_commits": f_total,
                 "top_author": top_author,
                 "top_author_pct": f_pct,
                 "bus_factor_risk": "HIGH" if f_pct > 60.0 else "NORMAL"
             }
         res["per_file_breakdown"] = file_breakdown
+
 
     return res
 

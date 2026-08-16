@@ -89,28 +89,30 @@ def test_update_cross_links_accepts_orm_session():
     from archaeologist.storage.db import init_db, get_session
     from archaeologist.storage.models import PullRequest, Issue
     from archaeologist.ingestion.link_resolver import update_cross_links
+    from datetime import datetime
     
-    init_db()
+    init_db("sqlite:///:memory:")
     session = get_session()
 
-    
-    from datetime import datetime
-    pr = PullRequest(number=9910, title="Fix issue #9920", body="Closes #9920", author="alice", state="closed", created_at=datetime.utcnow())
+    p_num = 1010
+    i_num = 1020
 
-    issue = Issue(number=9920, title="Bug in auth", body="Found bug abc12345", state="open", author="bob", created_at=datetime.utcnow())
+
+    pr = PullRequest(number=p_num, title=f"Fix issue #{i_num}", body=f"Closes #{i_num}", author="alice", state="closed", created_at=datetime.utcnow())
+    issue = Issue(number=i_num, title="Bug in auth", body="Found bug abc12345", state="open", author="bob", created_at=datetime.utcnow())
     session.add(pr)
     session.add(issue)
     session.commit()
 
-    
     update_cross_links(session)
-    
-    updated_pr = session.get(PullRequest, 9910)
-    updated_issue = session.get(Issue, 9920)
-    
-    assert 9920 in updated_pr.linked_issue_numbers
-    assert 9910 in updated_issue.linked_pr_numbers
+
+    updated_pr = session.get(PullRequest, p_num)
+    updated_issue = session.get(Issue, i_num)
+
+    assert i_num in updated_pr.linked_issue_numbers
+    assert p_num in updated_issue.linked_pr_numbers
     session.close()
+
 
 def test_increment_retry_resets_sub_question_index():
     from archaeologist.agent.graph import increment_retry_node
@@ -130,5 +132,20 @@ def test_escape_like_central_security_helper():
     from archaeologist.utils.security import escape_like
     assert escape_like("get_user") == "get\\_user"
     assert escape_like("100%") == "100\\%"
+
+def test_sha_regex_allows_parent_ref_suffixes():
+    from archaeologist.utils.security import sanitize_sha
+    assert sanitize_sha("edabb99b12be5e1^") == "edabb99b12be5e1^"
+    assert sanitize_sha("edabb99b12be5e1^1") == "edabb99b12be5e1^1"
+    assert sanitize_sha("edabb99b12be5e1~2") == "edabb99b12be5e1~2"
+
+def test_repo_ownership_per_file_breakdown_ranking():
+    from archaeologist.mcp_server.tools import repo_ownership_tool
+    res = repo_ownership_tool()
+    assert "per_file_breakdown" in res
+    breakdown = res["per_file_breakdown"]
+    totals = [data["total_commits"] for data in breakdown.values()]
+    assert totals == sorted(totals, reverse=True)
+
 
 

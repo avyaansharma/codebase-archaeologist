@@ -1,7 +1,8 @@
 import os
 import sys
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, Optional
+
 from sqlmodel import SQLModel, create_engine, Session
 from dotenv import load_dotenv
 
@@ -17,16 +18,26 @@ engine = create_engine(
     pool_pre_ping=True
 )
 
-def init_db():
+def init_db(db_url: Optional[str] = None):
     """Initializes the database schema and enables SQLite WAL mode for high concurrency."""
+    global engine, DATABASE_URL
+    if db_url:
+        DATABASE_URL = db_url
+        engine = create_engine(
+            DATABASE_URL,
+            echo=False,
+            connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+            pool_pre_ping=True
+        )
     SQLModel.metadata.create_all(engine)
-    if DATABASE_URL.startswith("sqlite"):
+    if DATABASE_URL.startswith("sqlite") and ":memory:" not in DATABASE_URL:
         try:
             with engine.connect() as conn:
                 conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
                 conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
         except Exception as e:
             print(f"Notice: Could not set SQLite PRAGMA WAL mode: {e}", file=sys.stderr)
+
 
 def get_session() -> Session:
     """Returns a new SQLModel database session."""
