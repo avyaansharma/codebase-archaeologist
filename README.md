@@ -109,7 +109,7 @@ To evaluate the impact of each architectural layer in Codebase Archaeologist, we
 | **1. Baseline (Dense Vector Search Only)** | 50.00% | 68.33% | 60.00% | Pure semantic search misses exact code symbols (`_client.py::Client::send`). |
 | **2. + Sparse BM25 Keyword Search & RRF Fusion** | 70.00% | 85.00% | 78.00% | Hybrid RRF balances exact symbol matches with semantic intention queries. |
 | **3. + Bidirectional Cross-Link Traversal (`pr#`, `issue#`)** | 80.00% | 93.33% | 85.00% | Multi-hop graph traversal follows PR reviews, commit SHAs, and issue discussions. |
-| **4. + AST Symbol Graph Direct Retrieval & Verification** | **92.50%** | **98.33%** | **90.00%** | Direct symbol graph indexing guarantees code symbol definitions (`create_ssl_context`) are retrieved. |
+| **4. + AST Symbol Graph Direct Retrieval & Verification** | **92.50%** | **98.33%** | **90.00%** | Direct symbol graph indexing guarantees code symbol definitions (`create_ssl_context`, `ContextVar`) are retrieved. |
 
 ---
 
