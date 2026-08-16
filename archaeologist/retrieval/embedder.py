@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import urllib.request
 from typing import List, Optional
@@ -26,19 +27,19 @@ class Embedder:
         if self.gemini_keys:
             self.model = "models/gemini-embedding-001"
             self.dimension = 3072
-            print("Embedder initialized with Google Gemini API (models/gemini-embedding-001).")
+            print("Embedder initialized with Google Gemini API (models/gemini-embedding-001).", file=sys.stderr)
         elif self.voyage_key:
             self.model = "voyage-code-2"
             self.dimension = 1024
-            print("Embedder initialized with Voyage API (voyage-code-2).")
+            print("Embedder initialized with Voyage API (voyage-code-2).", file=sys.stderr)
         elif self.openai_key:
             self.model = "text-embedding-3-small"
             self.dimension = 1536
-            print("Embedder initialized with OpenAI API (text-embedding-3-small).")
+            print("Embedder initialized with OpenAI API (text-embedding-3-small).", file=sys.stderr)
         else:
             self.model = "mock"
             self.dimension = 384
-            print("WARNING: No embedding API keys found. Initializing with mock embedder.")
+            print("WARNING: No embedding API keys found. Initializing with mock embedder.", file=sys.stderr)
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """Embeds a list of texts and returns a list of embeddings (list of floats)."""
@@ -72,7 +73,7 @@ class Embedder:
                         embeddings.extend(self._embed_mock(batch))
                 return embeddings
             except Exception as e:
-                print(f"Notice: Gemini embedding API key rotation on error: {e}")
+                print(f"Notice: Gemini embedding API key rotation on error: {e}", file=sys.stderr)
                 continue
         return self._embed_mock(texts)
 
@@ -82,25 +83,29 @@ class Embedder:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.voyage_key}"
         }
-        data = {
-            "input": texts,
-            "model": self.model
-        }
         
-        try:
-            req = urllib.request.Request(
-                url, 
-                data=json.dumps(data).encode("utf-8"), 
-                headers=headers,
-                method="POST"
-            )
-            with urllib.request.urlopen(req) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-                embeddings = [item["embedding"] for item in result["data"]]
-                return embeddings
-        except Exception as e:
-            print(f"Error calling Voyage API: {e}")
-            return self._embed_mock(texts)
+        embeddings = []
+        for i in range(0, len(texts), 20):
+            batch = texts[i:i + 20]
+            data = {
+                "input": batch,
+                "model": self.model
+            }
+            try:
+                req = urllib.request.Request(
+                    url, 
+                    data=json.dumps(data).encode("utf-8"), 
+                    headers=headers,
+                    method="POST"
+                )
+                with urllib.request.urlopen(req) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                    batch_embeddings = [item["embedding"] for item in result["data"]]
+                    embeddings.extend(batch_embeddings)
+            except Exception as e:
+                print(f"Error calling Voyage API batch ({i}-{i+len(batch)}): {e}", file=sys.stderr)
+                embeddings.extend(self._embed_mock(batch))
+        return embeddings
 
     def _embed_openai(self, texts: List[str]) -> List[List[float]]:
         url = "https://api.openai.com/v1/embeddings"
@@ -108,39 +113,43 @@ class Embedder:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.openai_key}"
         }
-        data = {
-            "input": texts,
-            "model": self.model
-        }
         
-        try:
-            req = urllib.request.Request(
-                url, 
-                data=json.dumps(data).encode("utf-8"), 
-                headers=headers,
-                method="POST"
-            )
-            with urllib.request.urlopen(req) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-                embeddings = [item["embedding"] for item in result["data"]]
-                return embeddings
-        except Exception as e:
-            print(f"Error calling OpenAI API: {e}")
-            return self._embed_mock(texts)
+        embeddings = []
+        for i in range(0, len(texts), 20):
+            batch = texts[i:i + 20]
+            data = {
+                "input": batch,
+                "model": self.model
+            }
+            try:
+                req = urllib.request.Request(
+                    url, 
+                    data=json.dumps(data).encode("utf-8"), 
+                    headers=headers,
+                    method="POST"
+                )
+                with urllib.request.urlopen(req) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                    batch_embeddings = [item["embedding"] for item in result["data"]]
+                    embeddings.extend(batch_embeddings)
+            except Exception as e:
+                print(f"Error calling OpenAI API batch ({i}-{i+len(batch)}): {e}", file=sys.stderr)
+                embeddings.extend(self._embed_mock(batch))
+        return embeddings
 
     def _embed_mock(self, texts: List[str]) -> List[List[float]]:
-        """Fallback mock embedder returning deterministic unit vectors based on text hash."""
+        """Fallback mock embedder returning high-entropy deterministic unit vectors based on text hash."""
         import hashlib
         embeddings = []
         for text in texts:
-            h = hashlib.sha256(text.encode("utf-8")).digest()
             vector = []
             for i in range(self.dimension):
-                byte_idx = (i * 7) % len(h)
-                val = (h[byte_idx] / 255.0) - 0.5
+                h = hashlib.sha256(f"{text}:{i}".encode("utf-8")).digest()
+                val = (int.from_bytes(h[:4], "big") / 4294967295.0) - 0.5
                 vector.append(val)
             
             norm = sum(x*x for x in vector) ** 0.5
             normalized = [x/norm for x in vector] if norm > 0 else [0.0] * self.dimension
             embeddings.append(normalized)
         return embeddings
+

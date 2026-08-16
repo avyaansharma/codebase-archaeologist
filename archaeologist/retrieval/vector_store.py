@@ -1,8 +1,9 @@
 import os
+import sys
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, MatchAny, Range
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, MatchAny, Range, PayloadSchemaType
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,6 +12,7 @@ class VectorStore:
     def __init__(self, collection_name: str = "repo_history", vector_size: int = 1024):
         self.collection_name = collection_name
         self.vector_size = vector_size
+        self.is_in_memory_fallback = False
         
         qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
         qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
@@ -25,11 +27,13 @@ class VectorStore:
             else:
                 client = QdrantClient(url=qdrant_url, timeout=1.0)
             client.get_collections()
-            print(f"Connected to Qdrant server at {qdrant_url}")
+            print(f"Connected to Qdrant server at {qdrant_url}", file=sys.stderr)
+            self.is_in_memory_fallback = False
             return client
         except Exception:
-            print(f"Qdrant server at {qdrant_url} unavailable. Initializing lock-free in-memory Qdrant instance.")
+            print(f"Qdrant server at {qdrant_url} unavailable. Initializing lock-free in-memory Qdrant instance.", file=sys.stderr)
 
+        self.is_in_memory_fallback = True
         return QdrantClient(":memory:")
 
     def init_collection(self):
@@ -45,6 +49,22 @@ class VectorStore:
                 collection_name=self.collection_name,
                 vectors_config=VectorParams(size=self.vector_size, distance=Distance.COSINE),
             )
+
+        # Create payload indexes for fast filtered searches
+        for field_name, schema_type in [
+            ("file_paths", PayloadSchemaType.KEYWORD),
+            ("source_type", PayloadSchemaType.KEYWORD),
+            ("is_reverted", PayloadSchemaType.BOOL),
+            ("timestamp_unix", PayloadSchemaType.INTEGER),
+        ]:
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field_name,
+                    field_schema=schema_type
+                )
+            except Exception:
+                pass
 
     def upsert_chunks(self, chunks: List[dict], embeddings: List[List[float]], batch_size: int = 100):
         """Upserts chunks and their embeddings to Qdrant in batches of batch_size."""
@@ -127,7 +147,7 @@ class VectorStore:
             else:
                 results = []
         except Exception as e:
-            print(f"Error executing Qdrant search: {e}")
+            print(f"Error executing Qdrant search: {e}", file=sys.stderr)
             results = []
         
         hits = []
@@ -146,3 +166,4 @@ class VectorStore:
                 self.client.close()
         except Exception:
             pass
+

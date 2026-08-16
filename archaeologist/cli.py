@@ -92,7 +92,7 @@ def symbol_history(
 def start_server():
     """Starts the Codebase Archaeologist MCP Server on stdio transport."""
     from archaeologist.mcp_server.server import mcp
-    typer.echo("Starting stdio MCP server...")
+    typer.echo("Starting stdio MCP server...", err=True)
     mcp.run()
 
 @app.command()

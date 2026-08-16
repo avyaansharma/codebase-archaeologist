@@ -1,10 +1,11 @@
+import sys
 from sqlmodel import select
 from archaeologist.agent.state import AgentState
 from archaeologist.storage.db import get_session
 from archaeologist.storage.models import Chunk
 
 def follow_links_node(state: AgentState) -> dict:
-    print("Agent: Checking cross-linked references...")
+    print("Agent: Checking cross-linked references...", file=sys.stderr)
     current_chunks = state.get("retrieved_chunks", [])
     seen_ids = {c["id"] for c in current_chunks}
     seen_source_ids = {c["source_id"] for c in current_chunks}
@@ -17,10 +18,10 @@ def follow_links_node(state: AgentState) -> dict:
                 related_ids_to_fetch.add(ref)
 
     if not related_ids_to_fetch:
-        print("No new cross-linked references to follow.")
+        print("No new cross-linked references to follow.", file=sys.stderr)
         return {}
 
-    print(f"Fetching linked items: {related_ids_to_fetch}")
+    print(f"Fetching linked items: {related_ids_to_fetch}", file=sys.stderr)
     db_session = get_session()
     new_chunks = []
     try:
@@ -47,7 +48,8 @@ def follow_links_node(state: AgentState) -> dict:
         db_session.close()
 
     if new_chunks:
-        print(f"Added {len(new_chunks)} linked chunks to retrieval pool.")
+        print(f"Added {len(new_chunks)} linked chunks to retrieval pool.", file=sys.stderr)
         return {"retrieved_chunks": current_chunks + new_chunks}
     
     return {}
+

@@ -1,9 +1,14 @@
 import os
+import re
 import pickle
 from typing import List, Dict, Any, Optional
 from rank_bm25 import BM25Okapi
 
 _BM25_CACHE = {}
+
+def tokenize_text(text: str) -> List[str]:
+    """Tokenizes text into alphanumeric and underscore words for robust BM25 matching."""
+    return re.findall(r'[a-zA-Z0-9_]+', text.lower())
 
 class BM25Index:
     def __init__(self):
@@ -13,7 +18,7 @@ class BM25Index:
     def fit(self, chunks: List[dict]):
         """Fits the BM25 model on a list of chunk dictionaries."""
         self.chunks = chunks
-        tokenized_corpus = [chunk["text"].lower().split() for chunk in chunks]
+        tokenized_corpus = [tokenize_text(chunk["text"]) for chunk in chunks]
         if tokenized_corpus:
             self.bm25 = BM25Okapi(tokenized_corpus)
         else:
@@ -27,11 +32,14 @@ class BM25Index:
         source_types: Optional[List[str]] = None,
         is_reverted: Optional[bool] = None
     ) -> List[dict]:
-        """Performs a BM25 keyword search with metadata filters and returns ranked chunks."""
+        """Performs a BM25 keyword search with flexible metadata filters and returns ranked chunks."""
         if not self.bm25 or not self.chunks:
             return []
 
-        tokenized_query = query.lower().split()
+        tokenized_query = tokenize_text(query)
+        if not tokenized_query:
+            return []
+
         scores = self.bm25.get_scores(tokenized_query)
         
         results = []
@@ -41,9 +49,15 @@ class BM25Index:
                 
             chunk = self.chunks[idx]
             
-            # Apply metadata filters (§2.2 Fix)
-            if file_path and file_path not in chunk.get("file_paths", []):
-                continue
+            # Flexible file_path filter matching (matches chunk.file_paths OR text contents)
+            if file_path:
+                fp_lower = file_path.lower()
+                fp_base = os.path.basename(fp_lower)
+                c_paths = [p.lower() for p in chunk.get("file_paths", [])]
+                text_lower = chunk.get("text", "").lower()
+                if not (any(fp_lower in p or os.path.basename(p) == fp_lower for p in c_paths) or fp_base in text_lower):
+                    continue
+
             if is_reverted is not None and chunk.get("is_reverted") != is_reverted:
                 continue
             if source_types and chunk.get("source_type") not in source_types:
@@ -58,29 +72,26 @@ class BM25Index:
         return results[:limit]
 
     def save(self, file_path: str):
-        """Pickles the index to disk and updates the in-memory cache."""
+        """Saves the fitted BM25 model and chunks to disk."""
+        data = {
+            "bm25": self.bm25,
+            "chunks": self.chunks
+        }
         with open(file_path, "wb") as f:
-            pickle.dump((self.chunks, self.bm25), f)
-        mtime = os.path.getmtime(file_path) if os.path.exists(file_path) else 0
-        _BM25_CACHE[file_path] = (mtime, self.chunks, self.bm25)
+            pickle.dump(data, f)
+        _BM25_CACHE[file_path] = data
 
     def load(self, file_path: str):
-        """Loads a pickled index from memory cache or disk (§2.3 Fix)."""
-        if not os.path.exists(file_path):
-            self.bm25 = None
-            self.chunks = []
+        """Loads a fitted BM25 model and chunks from disk with in-memory caching."""
+        if file_path in _BM25_CACHE:
+            data = _BM25_CACHE[file_path]
+            self.bm25 = data["bm25"]
+            self.chunks = data["chunks"]
             return
 
-        mtime = os.path.getmtime(file_path)
-        if file_path in _BM25_CACHE and _BM25_CACHE[file_path][0] == mtime:
-            _, self.chunks, self.bm25 = _BM25_CACHE[file_path]
-            return
-
-        try:
+        if os.path.exists(file_path):
             with open(file_path, "rb") as f:
-                self.chunks, self.bm25 = pickle.load(f)
-            _BM25_CACHE[file_path] = (mtime, self.chunks, self.bm25)
-        except Exception as e:
-            print(f"Error loading BM25 index: {e}")
-            self.bm25 = None
-            self.chunks = []
+                data = pickle.load(f)
+                self.bm25 = data["bm25"]
+                self.chunks = data["chunks"]
+                _BM25_CACHE[file_path] = data

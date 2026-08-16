@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 from sqlmodel import select
 from archaeologist.agent.state import AgentState
@@ -10,9 +11,10 @@ from archaeologist.storage.db import get_session_context
 from archaeologist.storage.models import Chunk
 
 def sanitize_search_query(query: str) -> str:
-    """Strips GitHub search qualifiers (repo:..., is:pr, is:issue, site:...) to prevent BM25 string matching pollution."""
+    """Strips GitHub search qualifiers and git CLI flags to prevent BM25 string matching pollution."""
     cleaned = re.sub(r'(?:repo|is|owner|org|site|author|label):\S+', '', query, flags=re.IGNORECASE)
-    cleaned = re.sub(r'["\']', ' ', cleaned)
+    cleaned = re.sub(r'git\s+log|--(?:grep|oneline|author|since|until|path|name-only|stat)\S*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'["\'\-\-]', ' ', cleaned)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     return cleaned if cleaned else query
 
@@ -42,7 +44,7 @@ def search_node(state: AgentState) -> dict:
 
     for raw_q in queries_to_run:
         query = sanitize_search_query(raw_q)
-        print(f"Agent: Executing search for query: '{query}'...")
+        print(f"Agent: Executing search for query: '{query}'...", file=sys.stderr)
 
         # 1. Sparse BM25 Search
         if has_bm25:
@@ -53,8 +55,9 @@ def search_node(state: AgentState) -> dict:
                 source_types=source_types
             )
             for hit in s_hits:
-                if hit["id"] not in seen_sparse_ids:
-                    seen_sparse_ids.add(hit["id"])
+                cid = hit["chunk"]["id"]
+                if cid not in seen_sparse_ids:
+                    seen_sparse_ids.add(cid)
                     all_sparse_hits.append(hit)
 
         # 2. Dense Vector Search
@@ -70,11 +73,12 @@ def search_node(state: AgentState) -> dict:
                     source_types=source_types
                 )
                 for hit in d_hits:
-                    if hit["id"] not in seen_dense_ids:
-                        seen_dense_ids.add(hit["id"])
+                    cid = hit["id"]
+                    if cid not in seen_dense_ids:
+                        seen_dense_ids.add(cid)
                         all_dense_hits.append(hit)
         except Exception as e:
-            print(f"Error in dense search: {e}")
+            print(f"Error in dense search: {e}", file=sys.stderr)
 
     vector_store.close()
 
@@ -93,6 +97,7 @@ def search_node(state: AgentState) -> dict:
                             "id": c.id,
                             "score": 1.0,
                             "payload": {
+                                "id": c.id,
                                 "source_type": c.source_type,
                                 "source_id": c.source_id,
                                 "text": c.text,
@@ -106,7 +111,7 @@ def search_node(state: AgentState) -> dict:
 
     # 3. Hybrid Fusion across all accumulated query hits
     fused_results = reciprocal_rank_fusion(all_dense_hits, all_sparse_hits, limit=10)
-    print(f"Found {len(fused_results)} relevant history chunks across {len(queries_to_run)} search queries.")
+    print(f"Found {len(fused_results)} relevant history chunks across {len(queries_to_run)} search queries.", file=sys.stderr)
 
     retrieved = state.get("retrieved_chunks", [])
     evidence_map = state.get("evidence_by_chunk_id", {})
@@ -125,3 +130,4 @@ def search_node(state: AgentState) -> dict:
         "retrieved_chunks": retrieved + new_chunks,
         "evidence_by_chunk_id": evidence_map
     }
+

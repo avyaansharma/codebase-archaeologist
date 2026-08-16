@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 from typing import List, Dict, Any, Optional
 from github import Github
@@ -21,7 +22,7 @@ class GitHubIngestionClient:
         try:
             self.repo = self.gh.get_repo(f"{self.owner}/{self.repo_name}")
         except Exception as e:
-            print(f"Notice: Could not access GitHub repository metadata for '{self.owner}/{self.repo_name}': {e}")
+            print(f"Notice: Could not access GitHub repository metadata for '{self.owner}/{self.repo_name}': {e}", file=sys.stderr)
             self.repo = None
 
     def fetch_pull_requests(self, state: str = "all", limit: int = 500, direction: str = "asc") -> List[Dict[str, Any]]:
@@ -52,7 +53,7 @@ class GitHubIngestionClient:
                         })
                 except Exception as e:
                     if "rate limit" in str(e).lower() or "403" in str(e):
-                        print("Warning: GitHub API rate limit hit while fetching PR issue comments.")
+                        print("Warning: GitHub API rate limit hit while fetching PR issue comments.", file=sys.stderr)
                         break
 
                 # 2. Genuine inline code-review comments (on diff lines)
@@ -69,7 +70,7 @@ class GitHubIngestionClient:
                         })
                 except Exception as e:
                     if "rate limit" in str(e).lower() or "403" in str(e):
-                        print("Warning: GitHub API rate limit hit while fetching PR review comments.")
+                        print("Warning: GitHub API rate limit hit while fetching PR review comments.", file=sys.stderr)
 
                 prs_data.append({
                     "number": pr.number,
@@ -87,7 +88,7 @@ class GitHubIngestionClient:
                 })
                 count += 1
         except Exception as e:
-            print(f"Notice: Skipping remaining PR fetch due to GitHub API limit/error: {e}")
+            print(f"Notice: Skipping remaining PR fetch due to GitHub API limit/error: {e}", file=sys.stderr)
 
         return prs_data
 
@@ -120,7 +121,7 @@ class GitHubIngestionClient:
                         })
                 except Exception as e:
                     if "rate limit" in str(e).lower() or "403" in str(e):
-                        print("Warning: GitHub API rate limit hit while fetching issue comments.")
+                        print("Warning: GitHub API rate limit hit while fetching issue comments.", file=sys.stderr)
                         break
 
                 issues_data.append({
@@ -137,6 +138,7 @@ class GitHubIngestionClient:
                 })
                 count += 1
         except Exception as e:
-            print(f"Notice: Skipping remaining Issue fetch due to GitHub API limit/error: {e}")
+            print(f"Notice: Skipping remaining Issue fetch due to GitHub API limit/error: {e}", file=sys.stderr)
 
         return issues_data
+

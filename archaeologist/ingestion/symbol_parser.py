@@ -114,12 +114,13 @@ def map_lines_to_symbols(symbols: List[Dict[str, Any]], modified_lines: List[int
     return touched_symbols
 
 def extract_modified_line_numbers_from_diff(diff_text: str) -> Dict[str, List[int]]:
-    """Parses a unified git diff and returns a dict mapping file paths to modified line numbers."""
+    """Parses a unified git diff and returns a dict mapping file paths to modified line numbers (additions and deletions)."""
     file_lines = {}
     current_file = None
-    current_line = 0
+    old_line = 0
+    new_line = 0
 
-    hunk_header = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@')
+    hunk_header = re.compile(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@')
 
     for line in diff_text.splitlines():
         if line.startswith('+++ '):
@@ -130,11 +131,17 @@ def extract_modified_line_numbers_from_diff(diff_text: str) -> Dict[str, List[in
         elif line.startswith('@@'):
             m = hunk_header.match(line)
             if m:
-                current_line = int(m.group(1))
-        elif current_file and (line.startswith('+') and not line.startswith('+++')):
-            file_lines[current_file].append(current_line)
-            current_line += 1
-        elif current_file and not line.startswith('-'):
-            current_line += 1
+                old_line = int(m.group(1))
+                new_line = int(m.group(2))
+        elif current_file:
+            if line.startswith('+') and not line.startswith('+++'):
+                file_lines[current_file].append(new_line)
+                new_line += 1
+            elif line.startswith('-') and not line.startswith('---'):
+                file_lines[current_file].append(old_line)
+                old_line += 1
+            elif not line.startswith('\\'):
+                old_line += 1
+                new_line += 1
 
     return file_lines

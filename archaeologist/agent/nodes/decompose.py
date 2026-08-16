@@ -1,3 +1,4 @@
+import sys
 from archaeologist.agent.state import AgentState
 from archaeologist.utils.gemini_client import GeminiClientWrapper, get_gemini_api_key
 
@@ -17,11 +18,11 @@ Return a JSON object with this exact structure:
 
 def decompose_node(state: AgentState) -> dict:
     question = state["question"]
-    print("Agent: Decomposing question using Gemini 3.5 Flash...")
+    print("Agent: Decomposing question using Gemini 3.5 Flash...", file=sys.stderr)
 
     api_key = get_gemini_api_key()
     if not api_key:
-        print("WARNING: GEMINI_API_KEY / GOOGLE_API_KEY not found. Decompose skipped.")
+        print("WARNING: GEMINI_API_KEY / GOOGLE_API_KEY not found. Decompose skipped.", file=sys.stderr)
         return {
             "sub_questions": [question],
             "current_sub_question_index": 0,
@@ -46,10 +47,11 @@ def decompose_node(state: AgentState) -> dict:
             "evidence_by_chunk_id": {}
         }
     except Exception as e:
-        print(f"Error in decompose_node: {e}")
+        print(f"Error in decompose_node: {e}", file=sys.stderr)
         return {
             "sub_questions": [question],
             "current_sub_question_index": 0,
             "retrieved_chunks": [],
             "evidence_by_chunk_id": {}
         }
+

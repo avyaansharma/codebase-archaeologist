@@ -1,8 +1,11 @@
+import sys
 import pytest
 from archaeologist.ingestion.symbol_parser import FUNCTION_REGEX, extract_modified_line_numbers_from_diff
 from archaeologist.ingestion.link_resolver import SHA_REF
 from archaeologist.ingestion.revert_detector import _escape_like
 from archaeologist.utils.security import SHA_REGEX
+from archaeologist.retrieval.embedder import Embedder
+from archaeologist.retrieval.vector_store import VectorStore
 
 def test_sha_ref_ignores_pure_decimal_numbers():
     text = "Fixed in build 20240115, ticket 9876543, commit abc12345"
@@ -52,3 +55,33 @@ def test_sha_regex_misrouting_guard():
     assert not SHA_REGEX.match("issue1234")
     assert SHA_REGEX.match("a1b2c3d")
     assert SHA_REGEX.match("4970a09")
+
+def test_pure_deletion_hunk_line_attribution():
+    diff_text = (
+        "--- a/src/app.py\n"
+        "+++ b/src/app.py\n"
+        "@@ -15,5 +15,0 @@\n"
+        "-def old_unused_function():\n"
+        "-    pass\n"
+        "-    return None\n"
+    )
+    res = extract_modified_line_numbers_from_diff(diff_text)
+    assert "src/app.py" in res
+    assert 15 in res["src/app.py"]
+    assert 16 in res["src/app.py"]
+
+def test_mock_embedder_high_entropy():
+    embedder = Embedder()
+    vecs = embedder._embed_mock(["hello world", "test query"])
+    assert len(vecs) == 2
+    assert len(vecs[0]) == embedder.dimension
+    # Check that elements across dimension are distinct (not repeating 32-byte pattern)
+    unique_vals = len(set(vecs[0][:100]))
+    assert unique_vals > 50
+
+def test_vector_store_fallback_flag():
+    store = VectorStore()
+    assert hasattr(store, "is_in_memory_fallback")
+    assert isinstance(store.is_in_memory_fallback, bool)
+    store.close()
+

@@ -1,3 +1,4 @@
+import sys
 from langgraph.graph import StateGraph, END
 from archaeologist.agent.state import AgentState
 from archaeologist.agent.nodes.decompose import decompose_node
@@ -13,7 +14,7 @@ def advance_sub_question_node(state: AgentState) -> dict:
 
 def increment_retry_node(state: AgentState) -> dict:
     retries = state.get("retry_count", 0)
-    print(f"Agent: Verification failed. Incrementing retry count to {retries + 1}...")
+    print(f"Agent: Verification failed. Incrementing retry count to {retries + 1}...", file=sys.stderr)
     return {"retry_count": retries + 1}
 
 # Create the graph workflow
@@ -62,7 +63,7 @@ def verification_router(state: AgentState):
     
     retries = state.get("retry_count", 0)
     if retries >= 2:
-        print("Agent: Verification failed after maximum retries. Proceeding to synthesis.")
+        print("Agent: Verification failed after maximum retries. Proceeding to synthesis.", file=sys.stderr)
         return "synthesize"
         
     return "retry"

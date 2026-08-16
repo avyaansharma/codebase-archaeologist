@@ -1,4 +1,5 @@
 import os
+import sys
 from contextlib import contextmanager
 from typing import Generator
 from sqlmodel import SQLModel, create_engine, Session
@@ -25,7 +26,7 @@ def init_db():
                 conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
                 conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
         except Exception as e:
-            print(f"Notice: Could not set SQLite PRAGMA WAL mode: {e}")
+            print(f"Notice: Could not set SQLite PRAGMA WAL mode: {e}", file=sys.stderr)
 
 def get_session() -> Session:
     """Returns a new SQLModel database session."""

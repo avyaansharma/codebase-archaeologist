@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 from datetime import datetime
 from typing import Optional, List
@@ -32,17 +33,16 @@ class IngestionPipeline:
         self.github_limit = github_limit
 
     def run(self):
-        print("Initializing metadata database...")
+        print("Initializing metadata database...", file=sys.stderr)
         init_db()
 
-        print("Initializing vector store collection...")
+        print("Initializing vector store collection...", file=sys.stderr)
         embedder = Embedder()
         vector_store = VectorStore(vector_size=embedder.dimension)
         vector_store.init_collection()
-        vector_store.close()
 
         # Step 1: Walk git log & Extract AST Symbol Graph at historical commit SHAs
-        print(f"Walking git log and extracting AST code symbols from {self.repo_path}...")
+        print(f"Walking git log and extracting AST code symbols from {self.repo_path}...", file=sys.stderr)
         new_commits_count = 0
         
         with get_session_context() as session:
@@ -108,10 +108,12 @@ class IngestionPipeline:
                 existing_shas.add(c_data["sha"])
                 new_commits_count += 1
                 
-        print(f"Added {new_commits_count} new commits to SQLite.")
+        print(f"Added {new_commits_count} new commits to SQLite.", file=sys.stderr)
 
         # Step 1b: Codebase File Ingestion Pass
-        print("Chunking codebase source files...")
+        print("Chunking codebase source files...", file=sys.stderr)
+        all_chunks = []
+
         with get_session_context() as session:
             for root, dirs, files in os.walk(self.repo_path):
                 dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("venv", ".venv", "__pycache__", "node_modules", "site-packages", "dist", "build")]
@@ -127,22 +129,24 @@ class IngestionPipeline:
                                 c_obj = session.get(Chunk, chunk_id)
                                 if not c_obj:
                                     chunk_text = f"File {rel_fpath}:\n{content[:3000]}"
-                                    session.add(Chunk(
-                                        id=chunk_id,
-                                        source_type="file",
-                                        source_id=rel_fpath,
-                                        text=chunk_text,
-                                        timestamp=datetime.utcnow(),
-                                        file_paths=[rel_fpath],
-                                        symbols_modified=[],
-                                        is_reverted=False,
-                                        token_count=token_count(chunk_text)
-                                    ))
+                                    all_chunks.append({
+                                        "id": chunk_id,
+                                        "source_type": "file",
+                                        "source_id": rel_fpath,
+                                        "text": chunk_text,
+                                        "timestamp": datetime.utcnow(),
+                                        "file_paths": [rel_fpath],
+                                        "symbols_modified": [],
+                                        "is_reverted": False,
+                                        "token_count": token_count(chunk_text),
+                                        "embedded": False
+                                    })
                         except Exception:
                             pass
+            session.add_all([Chunk(**c) for c in all_chunks])
 
         # Step 2: Revert Detection Resolution Pass
-        print("Running revert detection pass...")
+        print("Running revert detection pass...", file=sys.stderr)
         with get_session_context() as session:
             revert_commits = session.exec(select(Commit).where(Commit.is_revert == True)).all()
             reverts_resolved = 0
@@ -157,12 +161,12 @@ class IngestionPipeline:
                             orig_commit.superseded_by_sha = r_commit.sha
                             session.add(orig_commit)
                             reverts_resolved += 1
-        print(f"Resolved {reverts_resolved} reverts.")
+        print(f"Resolved {reverts_resolved} reverts.", file=sys.stderr)
 
         # Step 3: Fetch GitHub Issues and PRs (Historical order: direction='asc')
         if self.repo_url:
             try:
-                print(f"Fetching GitHub Issues and PRs for {self.repo_url} (limit={self.github_limit}, direction=asc)...")
+                print(f"Fetching GitHub Issues and PRs for {self.repo_url} (limit={self.github_limit}, direction=asc)...", file=sys.stderr)
                 gh_client = GitHubIngestionClient(self.repo_url)
                 prs = gh_client.fetch_pull_requests(limit=self.github_limit, direction="asc")
                 issues = gh_client.fetch_issues(limit=self.github_limit, direction="asc")
@@ -180,7 +184,6 @@ class IngestionPipeline:
                                 created_at=pr_data["created_at"],
                                 merged_at=pr_data["merged_at"],
                                 merge_commit_sha=pr_data.get("merged_commit_sha"),
-                                merged_commit_sha=pr_data.get("merged_commit_sha"),
                                 comments=pr_data.get("comments", []),
                                 review_comments=pr_data.get("review_comments", []),
                                 linked_issue_numbers=pr_data.get("linked_issue_numbers", [])
@@ -204,41 +207,22 @@ class IngestionPipeline:
                             )
                             session.add(issue_obj)
             except Exception as e:
-                print(f"Notice: Skipping GitHub API ingestion ({e})")
+                print(f"Notice: Skipping GitHub API ingestion ({e})", file=sys.stderr)
         else:
-            print("No GitHub URL/remote origin provided. Skipping GitHub REST API ingestion.")
+            print("No GitHub URL/remote origin provided. Skipping GitHub REST API ingestion.", file=sys.stderr)
 
-        # Step 4: Cross-Link Resolution Pass (§2 Fix: Copy linked_commit_shas back to ORM objects)
+        # Step 4: Cross-Link Resolution Pass
         with get_session_context() as session:
-            prs = session.exec(select(PullRequest)).all()
-            issues = session.exec(select(Issue)).all()
-            pr_dicts = [p.model_dump() for p in prs]
-            issue_dicts = [i.model_dump() for i in issues]
-            
-            update_cross_links(pr_dicts, issue_dicts)
-            
-            for p_dict in pr_dicts:
-                p_obj = session.get(PullRequest, p_dict["number"])
-                if p_obj:
-                    p_obj.linked_issue_numbers = p_dict.get("linked_issue_numbers", [])
-                    p_obj.linked_commit_shas = p_dict.get("linked_commit_shas", [])
-                    session.add(p_obj)
-            for i_dict in issue_dicts:
-                i_obj = session.get(Issue, i_dict["number"])
-                if i_obj:
-                    i_obj.linked_pr_numbers = i_dict.get("linked_pr_numbers", [])
-                    i_obj.linked_commit_shas = i_dict.get("linked_commit_shas", [])
-                    session.add(i_obj)
+            update_cross_links(session)
 
-        # Step 5: Batched Chunking & Summarization Pass (§3 Fix: populate commit_dict["related_ids"])
-        print("Processing chunking rules & generating summaries with API request batching...")
+        # Step 5: Batched Chunking & Summarization Pass
+        print("Processing chunking rules & generating summaries with API request batching...", file=sys.stderr)
         summarizer = LLMSummarizer()
         
         with get_session_context() as session:
             all_commits = session.exec(select(Commit)).all()
             all_prs = session.exec(select(PullRequest)).all()
             
-            # Map commit SHAs to merging PRs
             pr_by_commit = {}
             for p in all_prs:
                 if p.merged_commit_sha:
@@ -263,8 +247,6 @@ class IngestionPipeline:
             for c in all_commits:
                 summary = diff_summaries.get(c.sha)
                 commit_dict = c.model_dump()
-                
-                # Populate commit_dict["related_ids"] (§3 Fix)
                 related = []
                 if c.sha in pr_by_commit:
                     related.append(f"pr#{pr_by_commit[c.sha]}")
@@ -275,7 +257,6 @@ class IngestionPipeline:
                 if not c_obj:
                     session.add(Chunk(**chunk_info))
 
-            # PR Chunks
             for pr in all_prs:
                 pr_dict = pr.model_dump()
                 pr_chunks = chunk_pr(pr=pr_dict)
@@ -284,7 +265,6 @@ class IngestionPipeline:
                     if not c_obj:
                         session.add(Chunk(**chunk_info))
 
-            # Issue Chunks
             all_issues = session.exec(select(Issue)).all()
             for i in all_issues:
                 issue_dict = i.model_dump()
@@ -295,7 +275,7 @@ class IngestionPipeline:
                         session.add(Chunk(**chunk_info))
 
         # Step 6: Indexing (BM25 + Qdrant)
-        print("Fetching chunks for indexing...")
+        print("Fetching chunks for indexing...", file=sys.stderr)
         with get_session_context() as session:
             all_chunks_db = session.exec(select(Chunk)).all()
             all_chunk_dicts = [
@@ -315,12 +295,12 @@ class IngestionPipeline:
 
         # 6a. BM25 Sparse Index
         if all_chunk_dicts:
-            print(f"Fitting BM25 index on {len(all_chunk_dicts)} chunks...")
+            print(f"Fitting BM25 index on {len(all_chunk_dicts)} chunks...", file=sys.stderr)
             bm25 = BM25Index()
             bm25.fit(all_chunk_dicts)
             bm25.save("bm25_index.bin")
 
-        # 6b. Qdrant Dense Index (filter Chunk.embedded == False for incremental resumability)
+        # 6b. Qdrant Dense Index
         with get_session_context() as session:
             unembedded_chunks = session.exec(select(Chunk).where(Chunk.embedded == False)).all()
             unembedded_dicts = [
@@ -342,7 +322,7 @@ class IngestionPipeline:
             vector_store = VectorStore(vector_size=embedder.dimension)
             vector_store.init_collection()
             
-            print(f"Generating embeddings for {len(unembedded_dicts)} un-embedded chunks...")
+            print(f"Generating embeddings for {len(unembedded_dicts)} un-embedded chunks...", file=sys.stderr)
             texts = [c["text"] for c in unembedded_dicts]
             embeddings = embedder.embed_texts(texts)
             
@@ -354,9 +334,9 @@ class IngestionPipeline:
                         if c_db:
                             c_db.embedded = True
                             session.add(c_db)
-                print("Incremental dense vector indexing complete!")
+                print("Incremental dense vector indexing complete!", file=sys.stderr)
             vector_store.close()
         else:
-            print("All chunks already embedded. Skipping dense vector re-embedding.")
+            print("All chunks already embedded. Skipping dense vector re-embedding.", file=sys.stderr)
 
-        print("Ingestion pipeline completed successfully!")
+        print("Ingestion pipeline completed successfully!", file=sys.stderr)

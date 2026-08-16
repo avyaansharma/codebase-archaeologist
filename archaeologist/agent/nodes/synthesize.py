@@ -1,3 +1,4 @@
+import sys
 from archaeologist.agent.state import AgentState
 from archaeologist.utils.gemini_client import GeminiClientWrapper, get_gemini_api_key
 
@@ -24,7 +25,7 @@ def synthesize_node(state: AgentState) -> dict:
     draft = state.get("draft_answer", "")
     retrieved = state.get("retrieved_chunks", [])
     
-    print("Agent: Synthesizing final answer using Gemini 3.5 Flash...")
+    print("Agent: Synthesizing final answer using Gemini 3.5 Flash...", file=sys.stderr)
 
     api_key = get_gemini_api_key()
     if not api_key:
@@ -43,5 +44,6 @@ def synthesize_node(state: AgentState) -> dict:
         )
         return {"response": response_text or draft}
     except Exception as e:
-        print(f"Error in synthesize_node: {e}")
+        print(f"Error in synthesize_node: {e}", file=sys.stderr)
         return {"response": draft or f"Error synthesizing response: {e}"}
+

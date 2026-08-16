@@ -1,3 +1,4 @@
+import sys
 from archaeologist.agent.state import AgentState
 from archaeologist.utils.gemini_client import GeminiClientWrapper, get_gemini_api_key
 
@@ -19,7 +20,7 @@ def plan_node(state: AgentState) -> dict:
     sub_qs = state["sub_questions"]
     current_sub_q = sub_qs[idx] if idx < len(sub_qs) else state["question"]
 
-    print(f"Agent: Planning retrieval using Gemini 3.5 Flash for sub-question: '{current_sub_q}'...")
+    print(f"Agent: Planning retrieval using Gemini 3.5 Flash for sub-question: '{current_sub_q}'...", file=sys.stderr)
 
     api_key = get_gemini_api_key()
     if not api_key:
@@ -37,5 +38,6 @@ def plan_node(state: AgentState) -> dict:
         queries = result.get("search_queries", [current_sub_q])
         return {"search_queries": queries if queries else [current_sub_q]}
     except Exception as e:
-        print(f"Error in plan_node: {e}")
+        print(f"Error in plan_node: {e}", file=sys.stderr)
         return {"search_queries": [current_sub_q]}
+

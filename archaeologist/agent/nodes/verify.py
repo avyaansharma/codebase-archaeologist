@@ -1,3 +1,4 @@
+import sys
 from archaeologist.agent.state import AgentState
 from archaeologist.utils.gemini_client import GeminiClientWrapper, get_gemini_api_key
 
@@ -33,7 +34,7 @@ def verify_node(state: AgentState) -> dict:
     draft = state.get("draft_answer")
     verification_passed = state.get("verification_passed", True)
 
-    print("Agent: Generating draft answer and self-verifying using Gemini 3.5 Flash...")
+    print("Agent: Generating draft answer and self-verifying using Gemini 3.5 Flash...", file=sys.stderr)
 
     api_key = get_gemini_api_key()
     if not api_key:
@@ -58,7 +59,7 @@ def verify_node(state: AgentState) -> dict:
                 max_output_tokens=1000
             )
         except Exception as e:
-            print(f"Error generating draft answer: {e}")
+            print(f"Error generating draft answer: {e}", file=sys.stderr)
             draft = "Draft generation failed."
 
     # 2. Fact-Check Draft Answer against Evidence
@@ -76,9 +77,10 @@ def verify_node(state: AgentState) -> dict:
             "unverified_claims": result.get("unverified_claims", [])
         }
     except Exception as e:
-        print(f"Error in verify_node: {e}")
+        print(f"Error in verify_node: {e}", file=sys.stderr)
         return {
             "draft_answer": draft,
             "verification_passed": True,
             "unverified_claims": []
         }
+

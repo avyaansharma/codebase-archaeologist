@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import json
 import subprocess
@@ -40,7 +41,7 @@ def search_history_tool(
     sparse_hits = []
     if os.path.exists("bm25_index.bin"):
         bm25.load("bm25_index.bin")
-        sparse_hits = bm25.search(query, limit=30)
+        sparse_hits = bm25.search(query, limit=30, file_path=file_path, source_types=source_types)
 
     embedder = Embedder()
     vector_store = VectorStore(vector_size=embedder.dimension)
@@ -57,7 +58,7 @@ def search_history_tool(
                 source_types=source_types
             )
     except Exception as e:
-        print(f"Error in vector search: {e}")
+        print(f"Error in vector search: {e}", file=sys.stderr)
     finally:
         vector_store.close()
 
@@ -131,8 +132,15 @@ def find_related_discussion_tool(ref: str) -> Dict[str, Any]:
                         if i:
                             result["issues"].append({"number": i.number, "title": i.title, "state": i.state})
                             
-                    stmt_commits = select(Commit).where(Commit.message.like(f"%#{pr.number}%"))
-                    linked_commits = session.exec(stmt_commits).all()
+                    # Priority 1: Use pr.linked_commit_shas extracted during ingestion
+                    linked_shas = set(pr.linked_commit_shas or [])
+                    if linked_shas:
+                        stmt_commits = select(Commit).where(Commit.sha.in_(linked_shas))
+                        linked_commits = session.exec(stmt_commits).all()
+                    else:
+                        all_commits = session.exec(select(Commit)).all()
+                        linked_commits = [c for c in all_commits if re.search(r'#' + str(pr.number) + r'\b', c.message)]
+                    
                     for c in linked_commits:
                         result["commits"].append({"sha": c.sha, "message": c.message, "author": c.author_name})
                 
@@ -149,6 +157,19 @@ def find_related_discussion_tool(ref: str) -> Dict[str, Any]:
                         p = session.get(PullRequest, p_num)
                         if p:
                             result["pull_requests"].append({"number": p.number, "title": p.title, "state": p.state})
+
+                    # Priority 1: Use issue.linked_commit_shas extracted during ingestion
+                    linked_shas = set(issue.linked_commit_shas or [])
+                    if linked_shas:
+                        stmt_commits = select(Commit).where(Commit.sha.in_(linked_shas))
+                        linked_commits = session.exec(stmt_commits).all()
+                    else:
+                        all_commits = session.exec(select(Commit)).all()
+                        linked_commits = [c for c in all_commits if re.search(r'#' + str(issue.number) + r'\b', c.message)]
+
+                    for c in linked_commits:
+                        if not any(existing["sha"] == c.sha for existing in result["commits"]):
+                            result["commits"].append({"sha": c.sha, "message": c.message, "author": c.author_name})
 
     return result
 
@@ -177,123 +198,88 @@ def blame_explain_tool(
                 if parts and len(parts[0]) == 40:
                     shas.add(parts[0])
     except Exception as e:
-        print(f"Error running git blame: {e}")
-        
-    if not shas:
-        return {"explanation": "No commit history found for specified lines.", "commits": []}
+        print(f"Error running git blame: {e}", file=sys.stderr)
 
-    commits_metadata = []
-    chunk_evidence = []
-    
+    commits_data = []
     with get_session_context() as session:
         for sha in shas:
-            commit = session.get(Commit, sha)
-            if commit:
-                commits_metadata.append({
-                    "sha": commit.sha,
-                    "author": commit.author_name,
-                    "date": commit.authored_date.isoformat(),
-                    "message": commit.message,
-                    "symbols_modified": _get_json_list(commit.symbols_modified),
-                    "is_revert": commit.is_revert,
+            c = session.get(Commit, sha)
+            if c:
+                commits_data.append({
+                    "sha": c.sha,
+                    "author": c.author_name,
+                    "date": c.authored_date.isoformat(),
+                    "message": c.message,
+                    "is_revert": c.is_revert
                 })
-                stmt = select(Chunk).where(Chunk.source_id == commit.sha)
-                chunks = session.exec(stmt).all()
-                for c in chunks:
-                    chunk_evidence.append(c.text)
 
-    api_key = get_gemini_api_key()
-    explanation = "Gemini API key missing. Commits returned without explanation."
-    
-    if api_key and chunk_evidence:
-        client = GeminiClientWrapper(api_key=api_key)
-        evidence_str = "\n\n".join(chunk_evidence)
-        prompt = (
-            "You are a codebase archaeologist. Analyze the commits that modified the specified lines of code.\n"
-            "Using the commit messages, explain the causal history of why these lines exist in their current form.\n"
-            "Identify the authors, when it was changed, and the context (e.g. bug fixes, refactoring, feature additions).\n\n"
-            f"Commit Data:\n{evidence_str}\n\n"
-            "Causal Explanation:"
-        )
-        try:
-            explanation = client.generate_text(
-                prompt=prompt,
-                model="gemini-2.5-flash",
-                temperature=0.0,
-                max_output_tokens=500
-            )
-        except Exception as e:
-            explanation = f"Error generating explanation: {e}"
-
+    question = f"Explain the origin and history of lines {line_start}-{line_end} in {clean_file_path} based on these commits: {json.dumps(commits_data)}"
+    explanation = ask_tool(question)
     return {
-        "explanation": explanation,
-        "commits": commits_metadata
+        "file_path": clean_file_path,
+        "line_range": f"{line_start}-{line_end}",
+        "commits": commits_data,
+        "explanation": explanation
     }
 
 def repo_hotspots_tool(top_n: int = 15) -> List[Dict[str, Any]]:
-    """Ranks files by commit frequency (most frequently modified files / hotspots)."""
-    counter = Counter()
+    """Calculates top churn files in the repo ranked by commit count."""
+    file_counts = Counter()
     with get_session_context() as session:
         commits = session.exec(select(Commit)).all()
         for c in commits:
-            for path in _get_json_list(c.files_changed):
-                counter[path] += 1
-
+            files = _get_json_list(c.files_changed)
+            for f in files:
+                file_counts[f] += 1
+    
     hotspots = []
-    for path, count in counter.most_common(top_n):
-        hotspots.append({"file_path": path, "commit_count": count})
+    for fpath, count in file_counts.most_common(top_n):
+        hotspots.append({"file_path": fpath, "commit_count": count})
     return hotspots
 
 def repo_ownership_tool(file_path: Optional[str] = None) -> Dict[str, Any]:
-    """Analyzes author contribution distribution per file or across the repository to determine bus factor."""
-    author_counts = defaultdict(Counter)
-    total_commits_per_file = Counter()
-
+    """Calculates author percentage contribution distribution and bus factor risk."""
+    author_counts = Counter()
+    total_commits = 0
     with get_session_context() as session:
         commits = session.exec(select(Commit)).all()
         for c in commits:
-            author = c.author_name
-            for path in _get_json_list(c.files_changed):
-                if file_path and path != file_path:
-                    continue
-                author_counts[path][author] += 1
-                total_commits_per_file[path] += 1
+            files = _get_json_list(c.files_changed)
+            if not file_path or file_path in files:
+                author_counts[c.author_name] += 1
+                total_commits += 1
 
-    results = {}
-    for path, authors in author_counts.items():
-        total = total_commits_per_file[path]
-        distribution = []
-        for author, count in authors.most_common():
-            percentage = round((count / total) * 100, 2)
-            distribution.append({"author": author, "commits": count, "percentage": percentage})
-        
-        main_author = distribution[0] if distribution else None
-        bus_factor_risk = "HIGH" if (main_author and main_author["percentage"] > 70 and total > 5) else "NORMAL"
-        
-        results[path] = {
-            "total_commits": total,
-            "main_owner": main_author["author"] if main_author else "unknown",
-            "bus_factor_risk": bus_factor_risk,
-            "authors": distribution
+    distribution = {}
+    for author, count in author_counts.items():
+        distribution[author] = {
+            "commit_count": count,
+            "percentage": round((count / total_commits) * 100, 2) if total_commits > 0 else 0.0
         }
 
-    return results
+    # Calculate bus factor risk (e.g. HIGH if single author owns > 60% of commits)
+    max_pct = max([data["percentage"] for data in distribution.values()]) if distribution else 0.0
+    risk = "HIGH (Single Author Dominance)" if max_pct > 60.0 else "NORMAL"
+
+    return {
+        "target_file": file_path or "GLOBAL REPOSITORY",
+        "total_commits": total_commits,
+        "author_distribution": distribution,
+        "bus_factor_risk": risk
+    }
 
 def change_coupling_tool(min_co_commits: int = 2, top_n: int = 15) -> List[Dict[str, Any]]:
-    """Finds pairs of files that frequently change together in the same commit (temporal coupling)."""
-    co_commit_counts = Counter()
-
+    """Identifies pairs of files that frequently change together in the same commit."""
+    pair_counts = Counter()
     with get_session_context() as session:
         commits = session.exec(select(Commit)).all()
         for c in commits:
             files = sorted(list(set(_get_json_list(c.files_changed))))
             for i in range(len(files)):
                 for j in range(i + 1, len(files)):
-                    pair = (files[i], files[j])
-                    co_commit_counts[pair] += 1
+                    pair_counts[(files[i], files[j])] += 1
 
     couplings = []
-    for (f1, f2), count in co_commit_counts.most_common(top_n):
+    for (f1, f2), count in pair_counts.most_common(top_n):
         if count >= min_co_commits:
             couplings.append({
                 "file_a": f1,
@@ -352,7 +338,7 @@ def ask_tool(question: str) -> str:
     }
     
     try:
-        final_state = agent_graph.invoke(inputs)
+        final_state = agent_graph.invoke(inputs, config={"recursion_limit": 25})
         return final_state.get("response", "Could not synthesize response.")
     except Exception as e:
         return f"Error executing agent loop: {e}"
