@@ -61,20 +61,27 @@ class Embedder:
             try:
                 client = genai.Client(api_key=key)
                 embeddings = []
+                import time
                 for i in range(0, len(texts), 20):
                     batch = texts[i:i + 20]
-                    try:
-                        res = client.models.embed_content(
-                            model=self.model,
-                            contents=batch
-                        )
-                        if hasattr(res, "embeddings") and res.embeddings:
-                            embeddings.extend([e.values for e in res.embeddings])
-                        else:
+                    for attempt in range(4):
+                        try:
+                            res = client.models.embed_content(
+                                model=self.model,
+                                contents=batch
+                            )
+                            if hasattr(res, "embeddings") and res.embeddings:
+                                embeddings.extend([e.values for e in res.embeddings])
+                            else:
+                                embeddings.extend(self._embed_mock(batch))
+                            break
+                        except Exception as be:
+                            if "429" in str(be) or "RESOURCE_EXHAUSTED" in str(be):
+                                time.sleep(3 * (attempt + 1))
+                                continue
+                            print(f"Notice: Gemini embedding batch error: {be}", file=sys.stderr)
                             embeddings.extend(self._embed_mock(batch))
-                    except Exception as be:
-                        print(f"Notice: Gemini embedding batch error: {be}", file=sys.stderr)
-                        embeddings.extend(self._embed_mock(batch))
+                            break
                 return embeddings
             except Exception as e:
                 print(f"Notice: Gemini embedding API key rotation on error: {e}", file=sys.stderr)

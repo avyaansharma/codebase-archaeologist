@@ -66,3 +66,20 @@ class SymbolIndex(SQLModel, table=True):
     symbol_name: str
     kind: str                                     # "class" | "function" | "method"
     commit_count: int = 0
+
+def is_valid_commit_sha(session, sha_str: str) -> bool:
+    if not sha_str or len(sha_str) < 7:
+        return False
+    from archaeologist.utils.security import escape_like
+    escaped = escape_like(sha_str)
+    stmt = select(Commit.sha).where(Commit.sha.like(f"{escaped}%", escape="\\"))
+    result = session.exec(stmt).first()
+    return result is not None
+
+def is_valid_pr_or_issue(session, ref_num: int) -> bool:
+    pr_stmt = select(PullRequest.number).where(PullRequest.number == ref_num)
+    if session.exec(pr_stmt).first() is not None:
+        return True
+    issue_stmt = select(Issue.number).where(Issue.number == ref_num)
+    return session.exec(issue_stmt).first() is not None
+

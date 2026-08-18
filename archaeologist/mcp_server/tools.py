@@ -362,7 +362,7 @@ def ask_tool(question: str) -> str:
     }
     
     try:
-        final_state = agent_graph.invoke(inputs, config={"recursion_limit": 25})
+        final_state = agent_graph.invoke(inputs, config={"recursion_limit": 60})
         return final_state.get("response", "Could not synthesize response.")
     except Exception as e:
         return f"Error executing agent loop: {e}"

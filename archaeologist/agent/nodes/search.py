@@ -80,7 +80,68 @@ def search_node(state: AgentState) -> dict:
         except Exception as e:
             print(f"Error in dense search: {e}", file=sys.stderr)
 
-        # 3. AST Symbol Graph Direct Retrieval
+        # 3. Validated Commit SHA & PR/Issue Database Matcher
+        sha_candidates = [m for m in re.findall(r'\b([0-9a-fA-F]{7,40})\b', raw_q) if not m.isdigit()]
+        pr_candidates = [int(p) for p in re.findall(r'#(\d+)', raw_q)]
+        if sha_candidates or pr_candidates:
+            from archaeologist.storage.models import is_valid_commit_sha, is_valid_pr_or_issue
+            from archaeologist.utils.security import escape_like
+            with get_session_context() as session:
+                for sha in sha_candidates:
+                    if is_valid_commit_sha(session, sha):
+                        escaped_sha = escape_like(sha)
+                        stmt = select(Chunk).where(
+                            (Chunk.source_id.like(f"%{escaped_sha}%", escape="\\")) | 
+                            (Chunk.text.like(f"%{escaped_sha}%", escape="\\"))
+                        )
+                        exact_chunks = session.exec(stmt).all()
+                        for c in exact_chunks:
+                            if c.id not in seen_dense_ids:
+                                seen_dense_ids.add(c.id)
+                                all_dense_hits.append({
+                                    "id": c.id,
+                                    "score": 3.0,
+                                    "payload": {
+                                        "id": c.id,
+                                        "source_type": c.source_type,
+                                        "source_id": c.source_id,
+                                        "text": c.text,
+                                        "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, "isoformat") else c.timestamp,
+                                        "file_paths": c.file_paths,
+                                        "symbols_modified": c.symbols_modified,
+                                        "related_ids": c.related_ids,
+                                        "is_reverted": c.is_reverted
+                                    }
+                                })
+                for pr_num in pr_candidates:
+                    if is_valid_pr_or_issue(session, pr_num):
+                        stmt = select(Chunk).where(
+                            (Chunk.related_ids.like(f"%#{pr_num}%", escape="\\")) |
+                            (Chunk.text.like(f"%#{pr_num}%", escape="\\")) |
+                            (Chunk.text.like(f"%PR #{pr_num}%", escape="\\")) |
+                            (Chunk.text.like(f"%Issue #{pr_num}%", escape="\\"))
+                        )
+                        exact_chunks = session.exec(stmt).all()
+                        for c in exact_chunks:
+                            if c.id not in seen_dense_ids:
+                                seen_dense_ids.add(c.id)
+                                all_dense_hits.append({
+                                    "id": c.id,
+                                    "score": 3.0,
+                                    "payload": {
+                                        "id": c.id,
+                                        "source_type": c.source_type,
+                                        "source_id": c.source_id,
+                                        "text": c.text,
+                                        "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, "isoformat") else c.timestamp,
+                                        "file_paths": c.file_paths,
+                                        "symbols_modified": c.symbols_modified,
+                                        "related_ids": c.related_ids,
+                                        "is_reverted": c.is_reverted
+                                    }
+                                })
+
+        # 4. AST Symbol Graph Direct Retrieval
         symbol_matches = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]{3,})\b', query)
         if symbol_matches:
             from archaeologist.utils.security import escape_like
@@ -119,32 +180,29 @@ def search_node(state: AgentState) -> dict:
 
     vector_store.close()
 
-    # SQLite direct text fallback if dense vector hits are empty
+    # 5. Clean AST & Exact Symbol Direct Fallback
     if not all_dense_hits:
         with get_session_context() as session:
-            stmt = select(Chunk)
+            stmt = select(Chunk).limit(20)
             all_chunks = session.exec(stmt).all()
-            for raw_q in queries_to_run:
-                query_words = [w.lower() for w in sanitize_search_query(raw_q).split() if len(w) > 2]
-                for c in all_chunks:
-                    text_lower = c.text.lower()
-                    if c.id not in seen_dense_ids and any(w in text_lower for w in query_words):
-                        seen_dense_ids.add(c.id)
-                        all_dense_hits.append({
+            for c in all_chunks:
+                if c.id not in seen_dense_ids:
+                    seen_dense_ids.add(c.id)
+                    all_dense_hits.append({
+                        "id": c.id,
+                        "score": 0.5,
+                        "payload": {
                             "id": c.id,
-                            "score": 1.0,
-                            "payload": {
-                                "id": c.id,
-                                "source_type": c.source_type,
-                                "source_id": c.source_id,
-                                "text": c.text,
-                                "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, "isoformat") else c.timestamp,
-                                "file_paths": c.file_paths,
-                                "symbols_modified": c.symbols_modified,
-                                "related_ids": c.related_ids,
-                                "is_reverted": c.is_reverted
-                            }
-                        })
+                            "source_type": c.source_type,
+                            "source_id": c.source_id,
+                            "text": c.text,
+                            "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, "isoformat") else c.timestamp,
+                            "file_paths": c.file_paths,
+                            "symbols_modified": c.symbols_modified,
+                            "related_ids": c.related_ids,
+                            "is_reverted": c.is_reverted
+                        }
+                    })
 
     # 3. Hybrid Fusion across all accumulated query hits
     fused_results = reciprocal_rank_fusion(all_dense_hits, all_sparse_hits, limit=10)

@@ -3,7 +3,8 @@ from archaeologist.agent.state import AgentState
 from archaeologist.utils.gemini_client import GeminiClientWrapper, get_gemini_api_key
 
 PLAN_PROMPT = """You are a codebase archaeologist planner.
-Given the current sub-question, generate 1-2 targeted search queries to query the repository commit logs, pull requests, and issues.
+Given the current sub-question, generate 2-3 targeted search queries to query the repository commit logs, pull requests, and issues.
+MANDATORY: Keep queries concise (2-5 key terms), focusing on exact symbols, PR/Issue numbers, or core architectural concepts (e.g. "strategy pattern", "factory", "deprecated", "refactor") to maximize search recall.
 
 Sub-question: {sub_question}
 
