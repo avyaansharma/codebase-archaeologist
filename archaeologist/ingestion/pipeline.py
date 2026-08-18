@@ -12,7 +12,8 @@ from archaeologist.ingestion.git_parser import iter_commits, get_commit_diff, is
 from archaeologist.ingestion.revert_detector import detect_revert_from_message, find_reverted_commit
 from archaeologist.ingestion.github_client import GitHubIngestionClient
 from archaeologist.ingestion.link_resolver import update_cross_links
-from archaeologist.ingestion.chunker import chunk_commit, chunk_issue, chunk_pr, make_deterministic_chunk_id, token_count
+from archaeologist.ingestion.chunker import chunk_commit, chunk_issue, chunk_pr, chunk_codebase, make_deterministic_chunk_id, token_count
+
 from archaeologist.ingestion.diff_summarizer import LLMSummarizer
 from archaeologist.ingestion.symbol_parser import (
     extract_symbols_from_code,
@@ -40,6 +41,8 @@ class IngestionPipeline:
         embedder = Embedder()
         vector_store = VectorStore(vector_size=embedder.dimension)
         vector_store.init_collection()
+        vector_store.close()
+
 
         # Step 1: Walk git log & Extract AST Symbol Graph at historical commit SHAs
         print(f"Walking git log and extracting AST code symbols from {self.repo_path}...", file=sys.stderr)
@@ -183,9 +186,10 @@ class IngestionPipeline:
         print(f"Resolved {reverts_resolved} reverts.", file=sys.stderr)
 
         # Step 3: Fetch GitHub Issues and PRs (Historical order: direction='asc')
-        if self.repo_url:
+        if self.repo_url and self.github_limit > 0 and not os.getenv("SKIP_GITHUB_API"):
             try:
                 print(f"Fetching GitHub Issues and PRs for {self.repo_url} (limit={self.github_limit}, direction=asc)...", file=sys.stderr)
+
                 gh_client = GitHubIngestionClient(self.repo_url)
                 prs = gh_client.fetch_pull_requests(limit=self.github_limit, direction="asc")
                 issues = gh_client.fetch_issues(limit=self.github_limit, direction="asc")
@@ -250,7 +254,7 @@ class IngestionPipeline:
                     pr_by_commit[sha] = p.number
 
             eligible_diffs = []
-            for c in all_commits:
+            for c in list(reversed(all_commits))[:100]:
                 if 0 < len(c.files_changed) <= 20:
                     d_text = get_commit_diff(self.repo_path, c.sha)
                     if d_text:
@@ -262,6 +266,7 @@ class IngestionPipeline:
                 batch = eligible_diffs[i:i + batch_size]
                 batch_res = summarizer.summarize_diff_batch(batch)
                 diff_summaries.update(batch_res)
+
 
             for c in all_commits:
                 summary = diff_summaries.get(c.sha)
@@ -292,6 +297,13 @@ class IngestionPipeline:
                     c_obj = session.get(Chunk, chunk_info["id"])
                     if not c_obj:
                         session.add(Chunk(**chunk_info))
+
+            code_chunks = chunk_codebase(self.repo_path)
+            for chunk_info in code_chunks:
+                c_obj = session.get(Chunk, chunk_info["id"])
+                if not c_obj:
+                    session.add(Chunk(**chunk_info))
+
 
         # Step 6: Indexing (BM25 + Qdrant)
         print("Fetching chunks for indexing...", file=sys.stderr)

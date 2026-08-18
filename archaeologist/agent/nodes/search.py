@@ -88,6 +88,7 @@ def search_node(state: AgentState) -> dict:
                 for sym in symbol_matches:
                     if sym.lower() in ("http", "httpx", "python", "code", "file", "path", "test", "class", "func", "defs", "does", "how", "what", "where", "when", "why"):
                         continue
+                    escaped_sym = escape_like(sym)
                     stmt = select(Chunk).where(Chunk.symbols_modified.like(f"%{escaped_sym}%", escape="\\"))
 
                     raw_chunks = session.exec(stmt).all()
@@ -95,6 +96,7 @@ def search_node(state: AgentState) -> dict:
                         c for c in raw_chunks 
                         if any(sym.lower() in str(s).lower() for s in (c.symbols_modified or []))
                     ]
+
                     for c in sym_chunks:
                         if c.id not in seen_dense_ids:
                             seen_dense_ids.add(c.id)
@@ -147,6 +149,11 @@ def search_node(state: AgentState) -> dict:
     # 3. Hybrid Fusion across all accumulated query hits
     fused_results = reciprocal_rank_fusion(all_dense_hits, all_sparse_hits, limit=10)
     print(f"Found {len(fused_results)} relevant history chunks across {len(queries_to_run)} search queries.", file=sys.stderr)
+    try:
+        vector_store.close()
+    except Exception:
+        pass
+
 
     retrieved = state.get("retrieved_chunks", [])
     evidence_map = state.get("evidence_by_chunk_id", {})

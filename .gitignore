@@ -11,9 +11,11 @@ venv/
 *.db-shm
 *.db-wal
 *.bin
+qdrant_db/
 qdrant_storage/
 qdrant_storage_local/
 .env
+
 
 # IDE & OS
 .vscode/

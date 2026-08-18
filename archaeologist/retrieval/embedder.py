@@ -63,19 +63,24 @@ class Embedder:
                 embeddings = []
                 for i in range(0, len(texts), 20):
                     batch = texts[i:i + 20]
-                    res = client.models.embed_content(
-                        model=self.model,
-                        contents=batch
-                    )
-                    if hasattr(res, "embeddings") and res.embeddings:
-                        embeddings.extend([e.values for e in res.embeddings])
-                    else:
+                    try:
+                        res = client.models.embed_content(
+                            model=self.model,
+                            contents=batch
+                        )
+                        if hasattr(res, "embeddings") and res.embeddings:
+                            embeddings.extend([e.values for e in res.embeddings])
+                        else:
+                            embeddings.extend(self._embed_mock(batch))
+                    except Exception as be:
+                        print(f"Notice: Gemini embedding batch error: {be}", file=sys.stderr)
                         embeddings.extend(self._embed_mock(batch))
                 return embeddings
             except Exception as e:
                 print(f"Notice: Gemini embedding API key rotation on error: {e}", file=sys.stderr)
                 continue
         return self._embed_mock(texts)
+
 
     def _embed_voyage(self, texts: List[str]) -> List[List[float]]:
         url = "https://api.voyageai.com/v1/embeddings"
@@ -138,18 +143,17 @@ class Embedder:
         return embeddings
 
     def _embed_mock(self, texts: List[str]) -> List[List[float]]:
-        """Fallback mock embedder returning high-entropy deterministic unit vectors based on text hash."""
+        """Fallback mock embedder returning fast deterministic unit vectors based on seeded RNG."""
         import hashlib
+        import random
         embeddings = []
         for text in texts:
-            vector = []
-            for i in range(self.dimension):
-                h = hashlib.sha256(f"{text}:{i}".encode("utf-8")).digest()
-                val = (int.from_bytes(h[:4], "big") / 4294967295.0) - 0.5
-                vector.append(val)
-            
-            norm = sum(x*x for x in vector) ** 0.5
-            normalized = [x/norm for x in vector] if norm > 0 else [0.0] * self.dimension
+            seed = int(hashlib.md5(text.encode("utf-8", errors="ignore")).hexdigest(), 16) % (2**32)
+            rng = random.Random(seed)
+            vector = [rng.uniform(-0.5, 0.5) for _ in range(self.dimension)]
+            norm = sum(x * x for x in vector) ** 0.5
+            normalized = [x / norm for x in vector] if norm > 0 else [0.0] * self.dimension
             embeddings.append(normalized)
         return embeddings
+
 

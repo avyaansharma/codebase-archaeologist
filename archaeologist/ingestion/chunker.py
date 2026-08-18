@@ -1,7 +1,10 @@
+import os
+import ast
 import tiktoken
 import uuid
 from datetime import datetime
 from typing import List, Dict, Any
+
 
 enc = tiktoken.get_encoding("cl100k_base")
 
@@ -218,4 +221,75 @@ def chunk_pr(pr: dict) -> List[dict]:
         idx_count += 1
 
     return chunks
+
+
+def chunk_codebase(repo_path: str) -> List[dict]:
+    """Walks the target codebase repository, parses AST symbols in current Python files, and creates baseline code chunks."""
+    chunks = []
+    for root, dirs, files in os.walk(repo_path):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("venv", ".venv", "tests", "__pycache__", "build", "dist")]
+        for file in files:
+            if not file.endswith(".py"):
+                continue
+            full_path = os.path.join(root, file)
+            rel_path = os.path.relpath(full_path, repo_path).replace("\\", "/")
+            
+            try:
+                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                
+                if not content.strip():
+                    continue
+
+                top_nodes = []
+                try:
+                    tree = ast.parse(content)
+                    top_nodes = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+                except Exception:
+                    pass
+
+                lines = content.splitlines()
+                if top_nodes:
+                    for idx, node in enumerate(top_nodes):
+                        end_ln = getattr(node, 'end_lineno', node.lineno + 60)
+                        node_lines = lines[node.lineno - 1 : end_ln]
+                        node_code = "\n".join(node_lines)
+                        if token_count(node_code) > 600:
+                            node_code = enc.decode(enc.encode(node_code)[:500])
+                        
+                        chunk_text = f"File: {rel_path}\nSymbol: {node.name}\n\n{node_code}".strip()
+                        chunk_id = make_deterministic_chunk_id("code", f"{rel_path}:{node.name}", idx, chunk_text)
+                        chunks.append({
+                            "id": chunk_id,
+                            "source_type": "code",
+                            "source_id": rel_path,
+                            "text": chunk_text,
+                            "timestamp": datetime.utcnow(),
+                            "file_paths": [rel_path],
+                            "symbols_modified": [node.name],
+                            "is_reverted": False,
+                            "token_count": token_count(chunk_text),
+                            "related_ids": []
+                        })
+                else:
+                    symbols_found = []
+                    chunk_text = f"File: {rel_path}\n\n{content[:1500]}".strip()
+                    chunk_id = make_deterministic_chunk_id("code", rel_path, 0, chunk_text)
+                    chunks.append({
+                        "id": chunk_id,
+                        "source_type": "code",
+                        "source_id": rel_path,
+                        "text": chunk_text,
+                        "timestamp": datetime.utcnow(),
+                        "file_paths": [rel_path],
+                        "symbols_modified": symbols_found,
+                        "is_reverted": False,
+                        "token_count": token_count(chunk_text),
+                        "related_ids": []
+                    })
+            except Exception:
+                pass
+    return chunks
+
+
 

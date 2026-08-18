@@ -10,7 +10,7 @@ load_dotenv()
 class GitHubIngestionClient:
     def __init__(self, repo_url: str, token: Optional[str] = None):
         self.token = token or os.getenv("GITHUB_TOKEN")
-        self.gh = Github(self.token) if self.token else Github()
+        self.gh = Github(self.token, timeout=10) if self.token else Github(timeout=10)
         
         # Parse owner and repo name from URL (e.g. https://github.com/owner/repo)
         match = re.search(r'github\.com/([^/]+)/([^/.]+)', repo_url)
@@ -25,13 +25,27 @@ class GitHubIngestionClient:
             print(f"Notice: Could not access GitHub repository metadata for '{self.owner}/{self.repo_name}': {e}", file=sys.stderr)
             self.repo = None
 
+
     def fetch_pull_requests(self, state: str = "all", limit: int = 500, direction: str = "asc") -> List[Dict[str, Any]]:
         """Fetches PRs starting from oldest history (direction='asc') with genuine inline review comments & issue comments."""
         if not self.repo:
             return []
 
+        if not self.token:
+            print("Notice: No GITHUB_TOKEN set in environment. Skipping GitHub REST API ingestion (local git log & AST analysis active).", file=sys.stderr)
+            return []
+
         prs_data = []
         try:
+            rate_obj = getattr(self.gh.get_rate_limit(), 'core', None) or getattr(self.gh.get_rate_limit(), 'rate', None)
+            rem = getattr(rate_obj, 'remaining', 0) if rate_obj else 0
+
+            if rem < 15:
+                print(f"Notice: GitHub API rate limit low ({rem} remaining). Skipping detailed GitHub REST API fetching.", file=sys.stderr)
+                return []
+
+
+
             prs = self.repo.get_pulls(state=state, sort="created", direction=direction)
             count = 0
             for pr in prs:
@@ -40,6 +54,7 @@ class GitHubIngestionClient:
                 
                 body_text = pr.body or ""
                 linked_issues = [int(n) for n in re.findall(r'(?:fixes|resolves|closes|refs)\s+#(\d+)', body_text, re.IGNORECASE)]
+
                 
                 # 1. Issue-level discussion comments
                 comments = []
@@ -97,11 +112,22 @@ class GitHubIngestionClient:
         if not self.repo:
             return []
 
+        if not self.token:
+            return []
+
         issues_data = []
         try:
+            rem = self.gh.get_rate_limit().rate.remaining
+
+            if rem < 15:
+                print(f"Notice: GitHub API rate limit low ({rem} remaining). Skipping detailed Issue comments.", file=sys.stderr)
+                return []
+
+
             issues = self.repo.get_issues(state=state, sort="created", direction=direction)
             count = 0
             for issue in issues:
+
                 if count >= limit:
                     break
                 if issue.pull_request:  # Skip PRs returned by issue endpoint

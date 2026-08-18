@@ -122,12 +122,20 @@ class GeminiClientWrapper:
             cleaned = cleaned.strip()
             
         try:
-            return json.loads(cleaned)
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                return parsed[0]
+            return {"raw_data": parsed}
         except json.JSONDecodeError as e:
             match = re.search(r"\{.*\}", cleaned, re.DOTALL)
             if match:
                 try:
-                    return json.loads(match.group(0))
+                    parsed = json.loads(match.group(0))
+                    if isinstance(parsed, dict):
+                        return parsed
                 except Exception:
                     pass
             raise ValueError(f"Failed to parse JSON response from Gemini LLM: {raw_text}") from e
+

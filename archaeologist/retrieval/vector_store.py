@@ -34,7 +34,8 @@ class VectorStore:
             print(f"Qdrant server at {qdrant_url} unavailable. Initializing lock-free in-memory Qdrant instance.", file=sys.stderr)
 
         self.is_in_memory_fallback = True
-        return QdrantClient(":memory:")
+        return QdrantClient(path="./qdrant_db")
+
 
     def init_collection(self):
         """Creates the collection and payload indexes if they do not exist."""
@@ -108,7 +109,9 @@ class VectorStore:
         must_filters = []
         
         if file_path:
-            must_filters.append(FieldCondition(key="file_paths", match=MatchValue(value=file_path)))
+            fp_base = os.path.basename(file_path)
+            must_filters.append(FieldCondition(key="file_paths", match=MatchValue(value=fp_base)))
+
             
         if is_reverted is not None:
             must_filters.append(FieldCondition(key="is_reverted", match=MatchValue(value=is_reverted)))
