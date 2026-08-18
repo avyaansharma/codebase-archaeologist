@@ -180,29 +180,36 @@ def search_node(state: AgentState) -> dict:
 
     vector_store.close()
 
-    # 5. Clean AST & Exact Symbol Direct Fallback
-    if not all_dense_hits:
+    # 5. SQLite Direct Text Fallback for Low Hit Count
+    if len(all_dense_hits) < 5:
         with get_session_context() as session:
-            stmt = select(Chunk).limit(20)
-            all_chunks = session.exec(stmt).all()
-            for c in all_chunks:
-                if c.id not in seen_dense_ids:
-                    seen_dense_ids.add(c.id)
-                    all_dense_hits.append({
-                        "id": c.id,
-                        "score": 0.5,
-                        "payload": {
-                            "id": c.id,
-                            "source_type": c.source_type,
-                            "source_id": c.source_id,
-                            "text": c.text,
-                            "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, "isoformat") else c.timestamp,
-                            "file_paths": c.file_paths,
-                            "symbols_modified": c.symbols_modified,
-                            "related_ids": c.related_ids,
-                            "is_reverted": c.is_reverted
-                        }
-                    })
+            from archaeologist.utils.security import escape_like
+            for raw_q in queries_to_run:
+                keywords = [w.lower() for w in sanitize_search_query(raw_q).split() if len(w) >= 4]
+                for kw in keywords[:4]:
+                    if kw in ("http", "httpx", "python", "code", "file", "path", "test", "class", "func", "defs", "does", "how", "what", "where", "when", "why"):
+                        continue
+                    escaped_kw = escape_like(kw)
+                    stmt = select(Chunk).where(Chunk.text.like(f"%{escaped_kw}%", escape="\\")).limit(10)
+                    matching_chunks = session.exec(stmt).all()
+                    for c in matching_chunks:
+                        if c.id not in seen_dense_ids:
+                            seen_dense_ids.add(c.id)
+                            all_dense_hits.append({
+                                "id": c.id,
+                                "score": 1.0,
+                                "payload": {
+                                    "id": c.id,
+                                    "source_type": c.source_type,
+                                    "source_id": c.source_id,
+                                    "text": c.text,
+                                    "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, "isoformat") else c.timestamp,
+                                    "file_paths": c.file_paths,
+                                    "symbols_modified": c.symbols_modified,
+                                    "related_ids": c.related_ids,
+                                    "is_reverted": c.is_reverted
+                                }
+                            })
 
     # 3. Hybrid Fusion across all accumulated query hits
     fused_results = reciprocal_rank_fusion(all_dense_hits, all_sparse_hits, limit=10)

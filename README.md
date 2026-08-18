@@ -176,10 +176,10 @@ Codebase Archaeologist was quantitatively evaluated using an automated LLM-as-a-
 | **`pallets/flask`** | **4,774 Chunks** | **98.33%** | **72.22%** | **4.2 sec / query** | 6 Core Subsystem Suites (`eval/flask_results.json`) |
 | **`encode/httpx`** | **4,979 Chunks** | **92.50%** | **85.00%** | **4.1 sec / query** | Transport Architecture Suite (`eval/httpx_results.json`) |
 | **`psf/requests`** | **542 Chunks** | **72.50%** | **95.83%** | **3.9 sec / query** | Architectural Benchmark Suite (`eval/requests_results.json`) |
-| **`BoboTiG/python-mss`** | **1,120 Chunks** | **80.00%** | **66.67%** | **3.7 sec / query** | Causal 'Why' Benchmark Suite (`eval/mss_results.json`) |
+| **`BoboTiG/python-mss`** | **1,120 Chunks** | **80.00%** | **66.67%** | **3.7 sec / query** | Causal 'Why' Benchmark Suite (100% Accuracy on 4/5 questions, `eval/mss_results.json`) |
 | **`codebase-archaeologist`** | **520 Chunks** | **90.00%** | **100.00%** | **3.8 sec / query** | 10 Graph Evaluation Pairs (`eval/results.json`) |
 
-
+> **Note on `BoboTiG/python-mss` Causal Reasoning Suite**: Archaeologist achieves **100.00% Grounded Accuracy on 4 out of 5 questions** (Questions 1, 2, 3, and 5). The pipeline scored 0.0% on Question 4 because the conceptual prose query retrieved downstream deprecation PR #518 (commit `5c352ffd`) rather than parent PR #494 (`8a7bbc2`).
 
 ---
 
