@@ -242,7 +242,8 @@ def search_node(state: AgentState) -> dict:
                             })
 
     # 6. Hybrid Fusion across all accumulated query hits
-    fused_results = reciprocal_rank_fusion(all_dense_hits, all_sparse_hits, limit=10)
+    primary_query = queries_to_run[0] if queries_to_run else state.get("question", "")
+    fused_results = reciprocal_rank_fusion(all_dense_hits, all_sparse_hits, limit=10, query=primary_query)
     print(f"Found {len(fused_results)} relevant history chunks across {len(queries_to_run)} search queries.", file=sys.stderr)
 
     retrieved = state.get("retrieved_chunks", [])
