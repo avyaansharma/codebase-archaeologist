@@ -9,9 +9,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class VectorStore:
-    def __init__(self, collection_name: str = "repo_history", vector_size: int = 1024):
+    def __init__(self, collection_name: str = "repo_history", vector_size: Optional[int] = None):
         self.collection_name = collection_name
-        self.vector_size = vector_size
+        if vector_size is None:
+            from archaeologist.retrieval.embedder import Embedder
+            self.vector_size = Embedder().dimension
+        else:
+            self.vector_size = vector_size
         self.is_in_memory_fallback = False
         
         qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
@@ -38,11 +42,25 @@ class VectorStore:
 
 
     def init_collection(self):
-        """Creates the collection and payload indexes if they do not exist."""
+        """Creates the collection and payload indexes if they do not exist or if vector size mismatches."""
         try:
             collections = self.client.get_collections().collections
             exists = any(c.name == self.collection_name for c in collections)
-        except Exception:
+            if exists:
+                info = self.client.get_collection(self.collection_name)
+                # Check vector size
+                current_size = None
+                if hasattr(info.config.params.vectors, 'size'):
+                    current_size = info.config.params.vectors.size
+                elif isinstance(info.config.params.vectors, dict) and 'size' in info.config.params.vectors:
+                    current_size = info.config.params.vectors['size']
+                
+                if current_size and current_size != self.vector_size:
+                    print(f"Recreating collection '{self.collection_name}' due to vector size change ({current_size} -> {self.vector_size})...", file=sys.stderr)
+                    self.client.delete_collection(self.collection_name)
+                    exists = False
+        except Exception as e:
+            print(f"Warning checking collection existence: {e}", file=sys.stderr)
             exists = False
         
         if not exists:
@@ -69,6 +87,14 @@ class VectorStore:
 
     def upsert_chunks(self, chunks: List[dict], embeddings: List[List[float]], batch_size: int = 100):
         """Upserts chunks and their embeddings to Qdrant in batches of batch_size."""
+        if not embeddings:
+            return
+        actual_size = len(embeddings[0])
+        if actual_size != self.vector_size:
+            print(f"Mismatch between vector_store.vector_size ({self.vector_size}) and actual embedding size ({actual_size}). Adjusting collection...", file=sys.stderr)
+            self.vector_size = actual_size
+            self.init_collection()
+
         points = []
         for chunk, embedding in zip(chunks, embeddings):
             points.append(PointStruct(
@@ -109,8 +135,33 @@ class VectorStore:
         must_filters = []
         
         if file_path:
-            fp_base = os.path.basename(file_path)
-            must_filters.append(FieldCondition(key="file_paths", match=MatchValue(value=fp_base)))
+            norm_fp = file_path.replace("\\", "/")
+            candidate_paths = [norm_fp]
+            fp_base = os.path.basename(norm_fp)
+            
+            try:
+                from archaeologist.storage.db import get_session_context
+                from archaeologist.storage.models import Chunk
+                from sqlmodel import select
+                with get_session_context() as session:
+                    stmt = select(Chunk.file_paths)
+                    results = session.exec(stmt).all()
+                    db_paths = set()
+                    for fp_list in results:
+                        if isinstance(fp_list, list):
+                            for p in fp_list:
+                                if isinstance(p, str):
+                                    if p == norm_fp or p.endswith("/" + norm_fp) or p.endswith("/" + fp_base) or p == fp_base:
+                                        db_paths.add(p)
+                    if db_paths:
+                        candidate_paths = list(db_paths)
+            except Exception:
+                pass
+
+            if len(candidate_paths) > 1:
+                must_filters.append(FieldCondition(key="file_paths", match=MatchAny(any=candidate_paths)))
+            else:
+                must_filters.append(FieldCondition(key="file_paths", match=MatchValue(value=candidate_paths[0])))
 
             
         if is_reverted is not None:

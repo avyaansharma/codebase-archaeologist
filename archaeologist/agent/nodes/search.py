@@ -10,6 +10,33 @@ from archaeologist.retrieval.fusion import reciprocal_rank_fusion
 from archaeologist.storage.db import get_session_context
 from archaeologist.storage.models import Chunk
 
+_EMBEDDER_INSTANCE = None
+_VECTOR_STORE_INSTANCE = None
+
+SYMBOL_STOPWORDS = {
+    "http", "httpx", "python", "code", "file", "path", "test", "class", "func", "defs", 
+    "does", "how", "what", "where", "when", "why", "with", "from", "into", "request", 
+    "response", "session", "context", "global", "system", "method", "function", 
+    "module", "script", "option", "parameter", "config", "configuration", "default", 
+    "structure", "pattern", "design", "decision", "rationale", "implementation", 
+    "architecture", "hierarchy", "unify", "platform", "error", "handler", "interface", 
+    "server", "client", "common", "shared", "core", "base", "main", "init", "start", 
+    "stop", "close", "read", "write", "open", "save", "load", "update", "delete"
+}
+
+def _get_embedder():
+    global _EMBEDDER_INSTANCE
+    if _EMBEDDER_INSTANCE is None:
+        _EMBEDDER_INSTANCE = Embedder()
+    return _EMBEDDER_INSTANCE
+
+def _get_vector_store(dim: int):
+    global _VECTOR_STORE_INSTANCE
+    if _VECTOR_STORE_INSTANCE is None:
+        _VECTOR_STORE_INSTANCE = VectorStore(vector_size=dim)
+        _VECTOR_STORE_INSTANCE.init_collection()
+    return _VECTOR_STORE_INSTANCE
+
 def sanitize_search_query(query: str) -> str:
     """Strips GitHub search qualifiers and git CLI flags to prevent BM25 string matching pollution."""
     cleaned = re.sub(r'(?:repo|is|owner|org|site|author|label):\S+', '', query, flags=re.IGNORECASE)
@@ -29,13 +56,13 @@ def search_node(state: AgentState) -> dict:
     date_to = plan.get("date_to")
 
     bm25 = BM25Index()
-    has_bm25 = os.path.exists("bm25_index.bin")
+    bm25_path = os.path.abspath(os.getenv("BM25_INDEX_PATH", "bm25_index.bin"))
+    has_bm25 = os.path.exists(bm25_path)
     if has_bm25:
-        bm25.load("bm25_index.bin")
+        bm25.load(bm25_path)
 
-    embedder = Embedder()
-    vector_store = VectorStore(vector_size=embedder.dimension)
-    vector_store.init_collection()
+    embedder = _get_embedder()
+    vector_store = _get_vector_store(embedder.dimension)
 
     all_sparse_hits = []
     all_dense_hits = []
@@ -62,8 +89,8 @@ def search_node(state: AgentState) -> dict:
 
         # 2. Dense Vector Search
         try:
-            query_vectors = embedder.embed_texts([query])
-            if query_vectors:
+            query_vectors, success_flags = embedder.embed_texts([query], return_success_flags=True)
+            if query_vectors and success_flags and success_flags[0]:
                 d_hits = vector_store.search_chunks(
                     query_vector=query_vectors[0],
                     limit=30,
@@ -77,6 +104,8 @@ def search_node(state: AgentState) -> dict:
                     if cid not in seen_dense_ids:
                         seen_dense_ids.add(cid)
                         all_dense_hits.append(hit)
+            else:
+                print(f"Notice: Query embedding returned fallback mock vector. Skipping dense vector search for query: '{query}'", file=sys.stderr)
         except Exception as e:
             print(f"Error in dense search: {e}", file=sys.stderr)
 
@@ -93,7 +122,7 @@ def search_node(state: AgentState) -> dict:
                         stmt = select(Chunk).where(
                             (Chunk.source_id.like(f"%{escaped_sha}%", escape="\\")) | 
                             (Chunk.text.like(f"%{escaped_sha}%", escape="\\"))
-                        )
+                        ).limit(30)
                         exact_chunks = session.exec(stmt).all()
                         for c in exact_chunks:
                             if c.id not in seen_dense_ids:
@@ -120,7 +149,7 @@ def search_node(state: AgentState) -> dict:
                             (Chunk.text.like(f"%#{pr_num}%", escape="\\")) |
                             (Chunk.text.like(f"%PR #{pr_num}%", escape="\\")) |
                             (Chunk.text.like(f"%Issue #{pr_num}%", escape="\\"))
-                        )
+                        ).limit(30)
                         exact_chunks = session.exec(stmt).all()
                         for c in exact_chunks:
                             if c.id not in seen_dense_ids:
@@ -141,16 +170,22 @@ def search_node(state: AgentState) -> dict:
                                     }
                                 })
 
-        # 4. AST Symbol Graph Direct Retrieval
-        symbol_matches = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]{3,})\b', query)
-        if symbol_matches:
+        # 4. AST Symbol Graph Direct Retrieval with SymbolIndex Pre-Verification
+        symbol_candidates = [m for m in re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]{3,})\b', query) if m.lower() not in SYMBOL_STOPWORDS]
+        if symbol_candidates:
+            from archaeologist.storage.models import SymbolIndex
             from archaeologist.utils.security import escape_like
             with get_session_context() as session:
-                for sym in symbol_matches:
-                    if sym.lower() in ("http", "httpx", "python", "code", "file", "path", "test", "class", "func", "defs", "does", "how", "what", "where", "when", "why"):
-                        continue
+                valid_symbols = set()
+                for sym in symbol_candidates:
+                    escaped_s = escape_like(sym)
+                    stmt_sym = select(SymbolIndex.symbol_name).where(SymbolIndex.symbol_name.like(f"%{escaped_s}%", escape="\\"))
+                    if session.exec(stmt_sym).first():
+                        valid_symbols.add(sym)
+
+                for sym in valid_symbols:
                     escaped_sym = escape_like(sym)
-                    stmt = select(Chunk).where(Chunk.symbols_modified.like(f"%{escaped_sym}%", escape="\\"))
+                    stmt = select(Chunk).where(Chunk.symbols_modified.like(f"%{escaped_sym}%", escape="\\")).limit(30)
 
                     raw_chunks = session.exec(stmt).all()
                     sym_chunks = [
@@ -177,18 +212,13 @@ def search_node(state: AgentState) -> dict:
                                 }
                             })
 
-
-    vector_store.close()
-
     # 5. SQLite Direct Text Fallback for Low Hit Count
     if len(all_dense_hits) < 5:
         with get_session_context() as session:
             from archaeologist.utils.security import escape_like
             for raw_q in queries_to_run:
-                keywords = [w.lower() for w in sanitize_search_query(raw_q).split() if len(w) >= 4]
+                keywords = [w.lower() for w in sanitize_search_query(raw_q).split() if len(w) >= 4 and w.lower() not in SYMBOL_STOPWORDS]
                 for kw in keywords[:4]:
-                    if kw in ("http", "httpx", "python", "code", "file", "path", "test", "class", "func", "defs", "does", "how", "what", "where", "when", "why"):
-                        continue
                     escaped_kw = escape_like(kw)
                     stmt = select(Chunk).where(Chunk.text.like(f"%{escaped_kw}%", escape="\\")).limit(10)
                     matching_chunks = session.exec(stmt).all()
@@ -211,14 +241,9 @@ def search_node(state: AgentState) -> dict:
                                 }
                             })
 
-    # 3. Hybrid Fusion across all accumulated query hits
+    # 6. Hybrid Fusion across all accumulated query hits
     fused_results = reciprocal_rank_fusion(all_dense_hits, all_sparse_hits, limit=10)
     print(f"Found {len(fused_results)} relevant history chunks across {len(queries_to_run)} search queries.", file=sys.stderr)
-    try:
-        vector_store.close()
-    except Exception:
-        pass
-
 
     retrieved = state.get("retrieved_chunks", [])
     evidence_map = state.get("evidence_by_chunk_id", {})

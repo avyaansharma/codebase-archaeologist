@@ -18,14 +18,15 @@ def make_deterministic_chunk_id(source_type: str, source_id: str, index: int = 0
     key = f"{source_type}:{source_id}:{index}:{text_snippet[:60]}"
     return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
 
-def chunk_commit(commit: dict, diff_summary: str | None) -> dict:
+def chunk_commit(commit: dict, diff_summary: str | None) -> List[dict]:
     body = diff_summary or ""
     symbols_str = ", ".join(commit.get("symbols_modified", []))
     sym_header = f"\nSymbols Modified: {symbols_str}" if symbols_str else ""
+    raw_msg = commit.get("message") or ""
     
-    text = f"Commit {commit['sha']} by {commit['author_name']}\nMessage: {commit['message']}{sym_header}\n\nDiff Summary:\n{body}".strip()
+    text = f"Commit {commit['sha']} by {commit['author_name']}\nMessage: {raw_msg}{sym_header}\n\nDiff Summary:\n{body}".strip()
     if token_count(text) > 500:
-        msg_text = f"Commit {commit['sha']} by {commit['author_name']}\nMessage: {commit['message']}{sym_header}\n\nDiff Summary:\n"
+        msg_text = f"Commit {commit['sha']} by {commit['author_name']}\nMessage: {raw_msg}{sym_header}\n\nDiff Summary:\n"
         msg_tokens = token_count(msg_text)
         budget = max(500 - msg_tokens, 50)
         body_tokens = enc.encode(body)[:budget]
@@ -33,8 +34,7 @@ def chunk_commit(commit: dict, diff_summary: str | None) -> dict:
         text = f"{msg_text}{body}".strip()
         
     chunk_id = make_deterministic_chunk_id("commit", commit["sha"], 0, text)
-
-    return {
+    chunks = [{
         "id": chunk_id,
         "source_type": "commit",
         "source_id": commit["sha"],
@@ -45,7 +45,50 @@ def chunk_commit(commit: dict, diff_summary: str | None) -> dict:
         "is_reverted": commit.get("is_revert", False),
         "token_count": token_count(text),
         "related_ids": commit.get("related_ids", [])
-    }
+    }]
+
+    # Handle squash-merge bullet items or long multi-topic commit messages
+    bullet_lines = [line.strip() for line in raw_msg.splitlines() if line.strip().startswith(("* ", "- ", "• ")) and len(line.strip()) > 5]
+    if bullet_lines:
+        for idx, bullet in enumerate(bullet_lines, start=1):
+            sub_text = f"Commit {commit['sha']} ({commit.get('author_name', 'unknown')}) sub-topic: {bullet}{sym_header}"
+            if token_count(sub_text) > 400:
+                sub_text = enc.decode(enc.encode(sub_text)[:350])
+            sub_id = make_deterministic_chunk_id("commit", commit["sha"], idx, sub_text)
+            chunks.append({
+                "id": sub_id,
+                "source_type": "commit",
+                "source_id": commit["sha"],
+                "text": sub_text,
+                "timestamp": commit["authored_date"],
+                "file_paths": commit.get("files_changed", []),
+                "symbols_modified": commit.get("symbols_modified", []),
+                "is_reverted": commit.get("is_revert", False),
+                "token_count": token_count(sub_text),
+                "related_ids": commit.get("related_ids", [])
+            })
+    elif token_count(raw_msg) > 250:
+        paragraphs = [p.strip() for p in raw_msg.split("\n\n") if len(p.strip()) > 20]
+        if len(paragraphs) > 1:
+            for idx, para in enumerate(paragraphs[1:], start=1):
+                sub_text = f"Commit {commit['sha']} note: {para}{sym_header}"
+                if token_count(sub_text) > 400:
+                    sub_text = enc.decode(enc.encode(sub_text)[:350])
+                sub_id = make_deterministic_chunk_id("commit", commit["sha"], idx, sub_text)
+                chunks.append({
+                    "id": sub_id,
+                    "source_type": "commit",
+                    "source_id": commit["sha"],
+                    "text": sub_text,
+                    "timestamp": commit["authored_date"],
+                    "file_paths": commit.get("files_changed", []),
+                    "symbols_modified": commit.get("symbols_modified", []),
+                    "is_reverted": commit.get("is_revert", False),
+                    "token_count": token_count(sub_text),
+                    "related_ids": commit.get("related_ids", [])
+                })
+
+    return chunks
 
 def chunk_issue(issue: dict) -> List[dict]:
     chunks = []

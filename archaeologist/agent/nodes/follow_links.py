@@ -1,7 +1,7 @@
 import sys
 from sqlmodel import select
 from archaeologist.agent.state import AgentState
-from archaeologist.storage.db import get_session
+from archaeologist.storage.db import get_session_context
 from archaeologist.storage.models import Chunk
 
 def follow_links_node(state: AgentState) -> dict:
@@ -22,13 +22,12 @@ def follow_links_node(state: AgentState) -> dict:
         return {}
 
     print(f"Fetching linked items: {related_ids_to_fetch}", file=sys.stderr)
-    db_session = get_session()
     new_chunks = []
-    try:
+    with get_session_context() as session:
         for ref in related_ids_to_fetch:
             clean_ref = ref.split("#")[-1].split(":")[-1] if ("#" in ref or ":" in ref) else ref
             stmt = select(Chunk).where((Chunk.source_id == ref) | (Chunk.source_id == clean_ref))
-            results = db_session.exec(stmt).all()
+            results = session.exec(stmt).all()
             for c in results:
                 if c.id not in seen_ids:
                     # Format matching AgentState retrieved_chunks
@@ -45,12 +44,10 @@ def follow_links_node(state: AgentState) -> dict:
                     })
                     seen_ids.add(c.id)
 
-    finally:
-        db_session.close()
-
     if new_chunks:
         print(f"Added {len(new_chunks)} linked chunks to retrieval pool.", file=sys.stderr)
         return {"retrieved_chunks": current_chunks + new_chunks}
     
     return {}
+
 

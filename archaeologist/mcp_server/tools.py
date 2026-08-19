@@ -138,8 +138,10 @@ def find_related_discussion_tool(ref: str) -> Dict[str, Any]:
                         stmt_commits = select(Commit).where(Commit.sha.in_(linked_shas))
                         linked_commits = session.exec(stmt_commits).all()
                     else:
-                        all_commits = session.exec(select(Commit)).all()
-                        linked_commits = [c for c in all_commits if re.search(r'#' + str(pr.number) + r'\b', c.message)]
+                        from archaeologist.utils.security import escape_like
+                        escaped_num = escape_like(str(pr.number))
+                        stmt_commits = select(Commit).where(Commit.message.like(f"%#{escaped_num}%", escape="\\")).limit(50)
+                        linked_commits = session.exec(stmt_commits).all()
                     
                     for c in linked_commits:
                         result["commits"].append({"sha": c.sha, "message": c.message, "author": c.author_name})
@@ -164,8 +166,10 @@ def find_related_discussion_tool(ref: str) -> Dict[str, Any]:
                         stmt_commits = select(Commit).where(Commit.sha.in_(linked_shas))
                         linked_commits = session.exec(stmt_commits).all()
                     else:
-                        all_commits = session.exec(select(Commit)).all()
-                        linked_commits = [c for c in all_commits if re.search(r'#' + str(issue.number) + r'\b', c.message)]
+                        from archaeologist.utils.security import escape_like
+                        escaped_num = escape_like(str(issue.number))
+                        stmt_commits = select(Commit).where(Commit.message.like(f"%#{escaped_num}%", escape="\\")).limit(50)
+                        linked_commits = session.exec(stmt_commits).all()
 
                     for c in linked_commits:
                         if not any(existing["sha"] == c.sha for existing in result["commits"]):
@@ -298,6 +302,8 @@ def change_coupling_tool(min_co_commits: int = 2, top_n: int = 15) -> List[Dict[
         commits = session.exec(select(Commit)).all()
         for c in commits:
             files = sorted(list(set(_get_json_list(c.files_changed))))
+            if len(files) > 15:
+                files = files[:15]
             for i in range(len(files)):
                 for j in range(i + 1, len(files)):
                     pair_counts[(files[i], files[j])] += 1

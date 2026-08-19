@@ -21,3 +21,9 @@ qdrant_storage_local/
 .vscode/
 .idea/
 .DS_Store
+
+# Context & Documentation
+context.md
+bugs.md
+
+

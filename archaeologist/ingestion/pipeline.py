@@ -276,10 +276,13 @@ class IngestionPipeline:
                     related.append(f"pr#{pr_by_commit[c.sha]}")
                 commit_dict["related_ids"] = related
 
-                chunk_info = chunk_commit(commit=commit_dict, diff_summary=summary)
-                c_obj = session.get(Chunk, chunk_info["id"])
-                if not c_obj:
-                    session.add(Chunk(**chunk_info))
+                commit_chunks = chunk_commit(commit=commit_dict, diff_summary=summary)
+                if isinstance(commit_chunks, dict):
+                    commit_chunks = [commit_chunks]
+                for chunk_info in commit_chunks:
+                    c_obj = session.get(Chunk, chunk_info["id"])
+                    if not c_obj:
+                        session.add(Chunk(**chunk_info))
 
             for pr in all_prs:
                 pr_dict = pr.model_dump()
@@ -350,24 +353,31 @@ class IngestionPipeline:
             ]
 
         if unembedded_dicts:
-            vector_store = VectorStore(vector_size=embedder.dimension)
-            vector_store.init_collection()
-            
             print(f"Generating embeddings for {len(unembedded_dicts)} un-embedded chunks...", file=sys.stderr)
             texts = [c["text"] for c in unembedded_dicts]
-            embeddings = embedder.embed_texts(texts)
+            embeddings, success_flags = embedder.embed_texts(texts, return_success_flags=True)
             
             if embeddings:
-                vector_store.upsert_chunks(unembedded_dicts, embeddings)
-                with get_session_context() as session:
-                    for c_dict in unembedded_dicts:
-                        c_db = session.get(Chunk, c_dict["id"])
-                        if c_db:
-                            c_db.embedded = True
-                            session.add(c_db)
-                print("Incremental dense vector indexing complete!", file=sys.stderr)
-            vector_store.close()
+                successful_dicts = [d for d, success in zip(unembedded_dicts, success_flags) if success]
+                successful_embeddings = [e for e, success in zip(embeddings, success_flags) if success]
+                
+                if successful_dicts:
+                    actual_dim = len(successful_embeddings[0])
+                    vector_store = VectorStore(vector_size=actual_dim)
+                    vector_store.init_collection()
+                    vector_store.upsert_chunks(successful_dicts, successful_embeddings)
+                    with get_session_context() as session:
+                        for c_dict in successful_dicts:
+                            c_db = session.get(Chunk, c_dict["id"])
+                            if c_db:
+                                c_db.embedded = True
+                                session.add(c_db)
+                    print(f"Incremental dense vector indexing complete! Indexed {len(successful_dicts)} chunks.", file=sys.stderr)
+                    vector_store.close()
+                else:
+                    print("Notice: No chunks were successfully embedded due to quota limits. Skipping Qdrant vector indexing.", file=sys.stderr)
         else:
             print("All chunks already embedded. Skipping dense vector re-embedding.", file=sys.stderr)
 
         print("Ingestion pipeline completed successfully!", file=sys.stderr)
+

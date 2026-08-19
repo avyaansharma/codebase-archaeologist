@@ -1,5 +1,6 @@
 import sys
 import pytest
+from datetime import datetime
 from archaeologist.ingestion.symbol_parser import FUNCTION_REGEX, extract_modified_line_numbers_from_diff
 from archaeologist.ingestion.link_resolver import SHA_REF
 from archaeologist.ingestion.revert_detector import _escape_like
@@ -146,6 +147,37 @@ def test_repo_ownership_per_file_breakdown_ranking():
     breakdown = res["per_file_breakdown"]
     totals = [data["total_commits"] for data in breakdown.values()]
     assert totals == sorted(totals, reverse=True)
+
+def test_chunk_commit_squash_merge_bullets():
+    from archaeologist.ingestion.chunker import chunk_commit
+    commit = {
+        "sha": "abc123456789",
+        "author_name": "Alice",
+        "message": "Squash merge PR #123:\n* Refactor auth.py transport\n* Fix memory leak in session\n* Add unit tests",
+        "authored_date": datetime.utcnow(),
+        "files_changed": ["src/auth.py"]
+    }
+    chunks = chunk_commit(commit, diff_summary="Refactored auth")
+    assert isinstance(chunks, list)
+    assert len(chunks) == 4
+    assert chunks[0]["source_id"] == "abc123456789"
+    assert "sub-topic: * Refactor auth.py" in chunks[1]["text"]
+
+def test_plan_node_unverified_claims_prompt(monkeypatch):
+    from archaeologist.agent.nodes.plan import plan_node
+    
+    state = {
+        "question": "How does auth work?",
+        "sub_questions": ["How does auth work?"],
+        "current_sub_question_index": 0,
+        "retry_count": 1,
+        "unverified_claims": ["Auth uses JWT tokens."]
+    }
+    
+    # Verify plan_node handles retry state with unverified claims without error
+    res = plan_node(state)
+    assert "search_queries" in res
+    assert isinstance(res["search_queries"], list)
 
 
 
