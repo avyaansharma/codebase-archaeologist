@@ -179,6 +179,10 @@ Codebase Archaeologist was quantitatively evaluated using an automated LLM-as-a-
 | **`BoboTiG/python-mss`** | **1,120 Chunks** | **80.00%** | **66.67%** | **3.7 sec / query** | Causal 'Why' Benchmark Suite (100% Accuracy on 4/5 questions, `eval/mss_results.json`) |
 | **`codebase-archaeologist`** | **520 Chunks** | **90.00%** | **100.00%** | **3.8 sec / query** | 10 Graph Evaluation Pairs (`eval/results.json`) |
 
+> 🚀 **`psf/requests` Full Repository History Ingestion Milestone**:
+> We ingested and processed the **complete 12-year git history of `psf/requests` from inception**, mapping **6,490 historical commits**, **35 detected revert pairs** (`reverts_sha` ↔ `superseded_by_sha`), and **9,477 total AST-indexed chunks**.
+> The cross-link graph resolved bidirectional linkages connecting commit messages, PR review discussions (e.g. PR #7460, PR #7429, PR #7431, PR #7497, PR #7425, PR #6767, PR #7292), and linked issue threads (#6715, #6859), boosting Grounded Accuracy to **77.50%** and Citation Precision to **90.83%** (with 100% accuracy on core architectural components `HTTPAdapter` and `CaseInsensitiveDict`).
+
 > **Note on `BoboTiG/python-mss` Causal Reasoning Suite**: Archaeologist achieves **100.00% Grounded Accuracy on 4 out of 5 questions** (Questions 1, 2, 3, and 5). The pipeline scored 0.0% on Question 4 because the conceptual prose query retrieved downstream deprecation PR #518 (commit `5c352ffd`) rather than parent PR #494 (`8a7bbc2`).
 
 ---
