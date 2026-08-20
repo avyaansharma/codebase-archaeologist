@@ -126,3 +126,45 @@ def find_candidate_symbols(session, text: str, repo_id: Optional[str] = None, li
                     return matched
     return matched
 
+def find_candidate_forensics(session, text: str, repo_id: Optional[str] = None) -> List[str]:
+    """Extracts candidate PRs, Issues, Commit SHAs, and AST symbols matching query text."""
+    if not text:
+        return []
+    import re
+    from archaeologist.utils.security import escape_like
+    
+    evidence = []
+    # 1. PR / Issue numbers (e.g. #452, PR #494, Issue #486)
+    pr_issue_nums = re.findall(r'#(\d+)', text)
+    for num_str in pr_issue_nums[:4]:
+        try:
+            num = int(num_str)
+            pr = session.get(PullRequest, num)
+            if pr:
+                evidence.append(f"Pull Request #{pr.number}: {pr.title}")
+            issue = session.get(Issue, num)
+            if issue and (not pr or pr.title != issue.title):
+                evidence.append(f"Issue #{issue.number}: {issue.title}")
+        except Exception:
+            pass
+
+    # 2. Short / full hex SHAs (e.g. 06dc845, 5e5f3ee, 2d24115)
+    shas = re.findall(r'\b[0-9a-fA-F]{7,40}\b', text)
+    for sha in shas[:3]:
+        escaped_sha = escape_like(sha)
+        stmt = select(Commit).where(Commit.sha.like(f"{escaped_sha}%", escape="\\")).limit(1)
+        if repo_id:
+            stmt = stmt.where(Commit.repo_id == repo_id)
+        c = session.exec(stmt).first()
+        if c:
+            msg_line = c.message.splitlines()[0] if c.message else ""
+            evidence.append(f"Commit {c.sha[:7]}: {msg_line}")
+
+    # 3. Symbols
+    symbols = find_candidate_symbols(session, text, repo_id=repo_id, limit=6)
+    for s in symbols:
+        evidence.append(f"Symbol: {s['symbol_name']} ({s['kind']} in {s['file_path']})")
+
+    return evidence
+
+

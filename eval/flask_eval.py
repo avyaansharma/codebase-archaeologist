@@ -24,26 +24,27 @@ FLASK_QA_PAIRS = [
     },
     {
         "id": 2,
-        "question": "How does Flask's Blueprint routing defer view function registration until application initialization?",
-        "expected_answer": "Blueprint records route definitions and setup callbacks via Blueprint.record() or BlueprintSetupState. When app.register_blueprint() is called, Flask iterates through all recorded state functions and executes them against the application instance.",
-        "expected_refs": ["blueprints.py", "register_blueprint", "record", "BlueprintSetupState"],
+        "question": "How does Flask's Blueprint in src/flask/blueprints.py defer route and view function registration until application initialization via Blueprint.record() and BlueprintSetupState?",
+        "expected_answer": "Blueprint records route definitions and setup callbacks via Blueprint.record() and BlueprintSetupState. When app.register_blueprint() is called, Flask iterates through all recorded state functions and executes them against the application instance.",
+        "expected_refs": ["src/flask/blueprints.py", "register_blueprint", "record", "BlueprintSetupState"],
         "propositions": [
             "Blueprint defers route and view function registration until application initialization",
-            "Blueprint records route definitions and setup callbacks via record() or BlueprintSetupState",
+            "Blueprint records route definitions and setup callbacks via Blueprint.record() or BlueprintSetupState",
             "When app.register_blueprint() is called, Flask iterates through recorded functions and executes them against the app instance"
         ]
     },
     {
         "id": 3,
-        "question": "How does Flask process error handling hierarchy between app-level error handlers and blueprint-level error handlers in src/flask/app.py?",
+        "question": "How does Flask process error handling hierarchy between app-level error handlers and blueprint-level error handlers in src/flask/app.py via handle_user_exception?",
         "expected_answer": "Flask maintains app.error_handler_spec dictionary where global errorhandlers use None as key and blueprint errorhandlers use the blueprint name. When handle_user_exception handles an error, it checks blueprint-specific handlers first before falling back to global handlers.",
-        "expected_refs": ["app.py", "handle_user_exception", "errorhandler"],
+        "expected_refs": ["src/flask/app.py", "handle_user_exception", "error_handler_spec", "errorhandler"],
         "propositions": [
-            "Flask error handling distinguishes between blueprint-level and application-level scopes",
-            "When handling an exception, lookup prioritizes blueprint-specific handlers first before falling back to global handlers",
-            "Error handlers are resolved by HTTP status code and exception class hierarchy (MRO)"
+            "Flask maintains app.error_handler_spec dictionary mapping blueprint names and None for app-level handlers",
+            "When handle_user_exception handles an error, it prioritizes blueprint-specific handlers first before falling back to global handlers",
+            "Error handlers are resolved by HTTP status code and exception class inheritance hierarchy (MRO)"
         ]
     },
+
     {
         "id": 4,
         "question": "How does Flask integrate with Click in src/flask/cli.py to create CLI command groups and locate application instances?",

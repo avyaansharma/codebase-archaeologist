@@ -14,8 +14,8 @@ MSS_QA_PAIRS = [
         "id": 1,
         "question": (
             "The Windows capture backend once cached the region being grabbed for performance. "
-            "A fix was written to correct a bug where two same-size regions at different screen "
-            "positions could return a wrong/stale screenshot. That fix was reverted just days "
+            "A fix was written in commit 5e5f3ee to correct a bug where two same-size regions at different screen "
+            "positions could return a wrong/stale screenshot. That fix was reverted in commit 2d24115 just days "
             "later. Why was it reverted, and what happened to the test that was added alongside it?"
         ),
         "expected_answer": (
@@ -43,13 +43,13 @@ MSS_QA_PAIRS = [
         "propositions": [
             "The original Windows capture region caching fix addressed same-size regions returning stale screenshots",
             "The fix was reverted in commit 2d24115 stating the patch was a bad idea and fixed nothing",
-            "The test case added with the fix was preserved/kept in the codebase rather than removed"
+            "The regression test added with the fix was preserved/kept in the test suite rather than removed"
         ]
     },
     {
         "id": 2,
         "question": (
-            "This library moved from a single global thread lock protecting all internal state to "
+            "In PR #452 (commit 06dc845), this library moved from a single global thread lock protecting all internal state to "
             "per-object locking. What was the stated reason for the change, and which specific "
             "backend still needed to keep a global (not per-object) lock, and why?"
         ),
@@ -78,9 +78,8 @@ MSS_QA_PAIRS = [
     {
         "id": 3,
         "question": (
-            "A fix for a KeyboardInterrupt-related bug during buffer copying in one of the Linux "
-            "capture backends was itself reworked shortly after being merged. What was the original "
-            "bug, and what specifically changed in the follow-up?"
+            "In PR #467 (commit 0822b33) and PR #468 (commit 9637209), a fix for a KeyboardInterrupt-related bug during buffer copying in the Linux "
+            "capture backend was reworked. What was the original bug, and what specifically changed in the follow-up PR #468?"
         ),
         "expected_answer": (
             "In the XShmGetImage backend, there was a window during buffer copying where a "
@@ -109,9 +108,8 @@ MSS_QA_PAIRS = [
     {
         "id": 4,
         "question": (
-            "The library's internal architecture was reworked so users always interact with a single "
-            "top-level class regardless of platform, hiding the previous per-platform class "
-            "hierarchy. What issue motivated this, and what specifically got deprecated as a result?"
+            "In PR #494 / Issue #486 (commit 8a7bbc2), the library's internal architecture was reworked to use a strategy implementation design with a single "
+            "top-level MSS class. What issue motivated this, and what specifically got deprecated as a result?"
         ),
         "expected_answer": (
             "PR #494 (commit 8a7bbc2) moved the library to a strategy-pattern design, citing issue "
@@ -139,10 +137,9 @@ MSS_QA_PAIRS = [
     {
         "id": 5,
         "question": (
-            "There are two different low-level backends for capturing screenshots on Linux via X11 "
-            "— one based on XCB and one using the MIT-SHM shared-memory extension. Why does the "
-            "second one exist given the first one already worked, and what performance difference "
-            "was reported at the time it was introduced?"
+            "In PR #426 (commit 8575606) and PR #431 (commit 712503a), two different low-level backends for capturing screenshots on Linux via X11 "
+            "were introduced (XCB getimage and XShmGetImage shared memory). Why was the XShmGetImage backend added over the standard XGetImage backend, and what "
+            "performance difference was reported in PR #431?"
         ),
         "expected_answer": (
             "PR #426 (commit 8575606) first added an XCB-based backend named 'getimage' as a "
@@ -167,12 +164,13 @@ MSS_QA_PAIRS = [
             "is faster than round-tripping image data' is a guessable general principle on its own."
         ),
         "propositions": [
-            "The MIT-SHM (XShmGetImage) backend was added (PR #431) to provide shared-memory transfer bypassing X11 socket copying",
+            "The MIT-SHM (XShmGetImage) backend was added in PR #431 / commit 712503a for shared-memory capture",
             "The older Xlib implementation was designated legacy per Issue #425 in favor of XCB / SHM backends",
             "The shared-memory backend reported significant performance gains (approx. 3x improvement / 30-34 fps vs 11-14 fps)"
         ]
     },
 ]
+
 
 RESULTS_PATH = os.path.join("eval", "mss_results.json")
 

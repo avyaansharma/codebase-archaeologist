@@ -2,7 +2,7 @@ import sys
 from archaeologist.agent.state import AgentState
 from archaeologist.utils.gemini_client import GeminiClientWrapper, get_gemini_api_key
 from archaeologist.storage.db import get_session_context
-from archaeologist.storage.models import find_candidate_symbols
+from archaeologist.storage.models import find_candidate_forensics
 
 PLAN_PROMPT = """You are a codebase archaeologist planner.
 Given the current sub-question, generate 2-3 targeted search queries to query the repository commit logs, pull requests, and issues.
@@ -46,16 +46,17 @@ def plan_node(state: AgentState) -> dict:
 
     print(f"Agent: Planning retrieval using Gemini 3.5 Flash for sub-question: '{current_sub_q}' (retry={retry_count})...", file=sys.stderr)
 
-    # 1. Look up candidate code symbols in SymbolIndex
+    # 1. Look up candidate code symbols, PRs, and commit SHAs
     symbol_context = ""
     try:
         with get_session_context() as session:
-            candidate_syms = find_candidate_symbols(session, current_sub_q, repo_id=repo_id, limit=8)
-            if candidate_syms:
-                sym_list_str = "\n".join(f"- {s['symbol_name']} ({s['kind']} in {s['file_path']})" for s in candidate_syms)
-                symbol_context = f"\n\nDiscovered verified symbols in codebase:\n{sym_list_str}\nUse these exact symbols in your search queries when relevant."
+            candidate_evidence = find_candidate_forensics(session, current_sub_q, repo_id=repo_id)
+            if candidate_evidence:
+                evidence_str = "\n".join(f"- {e}" for e in candidate_evidence)
+                symbol_context = f"\n\nDiscovered verified entities in codebase:\n{evidence_str}\nUse these exact symbols, PR numbers, or commit SHAs in your search queries when relevant."
     except Exception as e:
-        print(f"Notice: Candidate symbol lookup skipped: {e}", file=sys.stderr)
+        print(f"Notice: Candidate forensics lookup skipped: {e}", file=sys.stderr)
+
 
     api_key = get_gemini_api_key()
     if not api_key:
