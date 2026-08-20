@@ -44,18 +44,24 @@ def ask(
 
 @app.command()
 def hotspots(
-    top_n: int = typer.Option(15, help="Top N hotspot files to list")
+    top_n: int = typer.Option(15, help="Top N hotspot files to list"),
+    db_path: Optional[str] = typer.Option(None, help="Optional SQLite database path (e.g. eval/data/flask.db)")
 ):
     """Lists repository hotspot files ranked by commit frequency."""
+    if db_path:
+        os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     from archaeologist.mcp_server.tools import repo_hotspots_tool
     res = repo_hotspots_tool(top_n=top_n)
     typer.echo(json.dumps(res, indent=2))
 
 @app.command()
 def ownership(
-    file_path: Optional[str] = typer.Option(None, help="Optional file path to inspect")
+    file_path: Optional[str] = typer.Option(None, help="Optional file path to inspect"),
+    db_path: Optional[str] = typer.Option(None, help="Optional SQLite database path (e.g. eval/data/flask.db)")
 ):
     """Analyzes author contribution distribution and bus factor risk."""
+    if db_path:
+        os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     from archaeologist.mcp_server.tools import repo_ownership_tool
     res = repo_ownership_tool(file_path=file_path)
     typer.echo(json.dumps(res, indent=2))
@@ -63,30 +69,40 @@ def ownership(
 @app.command()
 def coupling(
     min_co_commits: int = typer.Option(2, help="Minimum co-commits required"),
-    top_n: int = typer.Option(15, help="Top N coupled file pairs to list")
+    top_n: int = typer.Option(15, help="Top N coupled file pairs to list"),
+    db_path: Optional[str] = typer.Option(None, help="Optional SQLite database path (e.g. eval/data/flask.db)")
 ):
     """Identifies pairs of files that frequently change together (temporal coupling)."""
+    if db_path:
+        os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     from archaeologist.mcp_server.tools import change_coupling_tool
     res = change_coupling_tool(min_co_commits=min_co_commits, top_n=top_n)
     typer.echo(json.dumps(res, indent=2))
 
 @app.command()
 def symbols(
-    top_n: int = typer.Option(20, help="Top N AST symbols to list")
+    top_n: int = typer.Option(20, help="Top N AST symbols to list"),
+    db_path: Optional[str] = typer.Option(None, help="Optional SQLite database path (e.g. eval/data/flask.db)")
 ):
     """Lists extracted AST Code Symbols (classes, functions, methods) ranked by commit count."""
+    if db_path:
+        os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     from archaeologist.mcp_server.tools import repo_symbols_tool
     res = repo_symbols_tool(top_n=top_n)
     typer.echo(json.dumps(res, indent=2))
 
 @app.command()
 def symbol_history(
-    symbol_query: str = typer.Argument(..., help="Class or function name to search")
+    symbol_query: str = typer.Argument(..., help="Class or function name to search"),
+    db_path: Optional[str] = typer.Option(None, help="Optional SQLite database path (e.g. eval/data/flask.db)")
 ):
     """Retrieves all commits that modified a specific AST Code Symbol."""
+    if db_path:
+        os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     from archaeologist.mcp_server.tools import symbol_history_tool
     res = symbol_history_tool(symbol_query=symbol_query)
     typer.echo(json.dumps(res, indent=2))
+
 
 @app.command()
 def start_server():
