@@ -172,7 +172,8 @@ We quantitatively evaluated Codebase Archaeologist across real, famous open-sour
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **`psf/requests`** | **10,809 Chunks** (6,490 Commits) | **93.27%** | **100.00%** | **77.55%** | **Perfect Fact Entailment (100%)** across all questions (`Session.send` = 97.27%, `raise_for_status` = 100.00%) |
 | **`pallets/flask`** | **1,390 Chunks** (673 Commits) | **88.99%** | **88.89%** | **89.22%** | **88.99% Accuracy / 89.22% Citation F1**; Q1 (`ContextVar`) = 100%, Q4 (`Click` CLI) = 100%, Q6 (`full_dispatch_request`) = 96.67% |
-| **`BoboTiG/python-mss`** | **2,514 Chunks** (569 Commits) | **86.77%** | **86.67%** | **87.00%** | **Citation F1 Surged to 87.00%**; Q1 (`2d24115` revert) = 100%, Q2 (`06dc845` Xlib lock) = 100%, Q3 (`memoryview` context) = 100% |
+| **`BoboTiG/python-mss`** | **2,514 Chunks** (1,053 Commits) | **86.77%** | **86.67%** | **87.00%** | **Citation F1 Surged to 87.00%**; Q1 (`2d24115` revert) = 100%, Q2 (`06dc845` Xlib lock) = 100%, Q3 (`memoryview` context) = 100% |
+
 
 ---
 
