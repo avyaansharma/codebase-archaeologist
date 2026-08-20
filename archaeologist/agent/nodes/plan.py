@@ -1,10 +1,12 @@
 import sys
 from archaeologist.agent.state import AgentState
 from archaeologist.utils.gemini_client import GeminiClientWrapper, get_gemini_api_key
+from archaeologist.storage.db import get_session_context
+from archaeologist.storage.models import find_candidate_symbols
 
 PLAN_PROMPT = """You are a codebase archaeologist planner.
 Given the current sub-question, generate 2-3 targeted search queries to query the repository commit logs, pull requests, and issues.
-MANDATORY: Keep queries concise (2-5 key terms), focusing on exact symbols, PR/Issue numbers, or core architectural concepts (e.g. "strategy pattern", "factory", "deprecated", "refactor") to maximize search recall.
+MANDATORY: Keep queries concise (2-5 key terms), focusing on exact symbols, PR/Issue numbers, or core architectural concepts (e.g. "strategy pattern", "factory", "deprecated", "refactor") to maximize search recall.{symbol_context}
 
 Sub-question: {sub_question}
 
@@ -18,7 +20,7 @@ Return a JSON object with this exact structure:
 
 RETRY_PLAN_PROMPT = """You are a codebase archaeologist planner.
 The previous retrieval attempt failed verification because the following specific claims could not be verified from retrieved evidence:
-{unverified_claims}
+{unverified_claims}{symbol_context}
 
 Sub-question: {sub_question}
 
@@ -40,8 +42,20 @@ def plan_node(state: AgentState) -> dict:
 
     retry_count = state.get("retry_count", 0)
     unverified = state.get("unverified_claims", [])
+    repo_id = state.get("repo_id")
 
     print(f"Agent: Planning retrieval using Gemini 3.5 Flash for sub-question: '{current_sub_q}' (retry={retry_count})...", file=sys.stderr)
+
+    # 1. Look up candidate code symbols in SymbolIndex
+    symbol_context = ""
+    try:
+        with get_session_context() as session:
+            candidate_syms = find_candidate_symbols(session, current_sub_q, repo_id=repo_id, limit=8)
+            if candidate_syms:
+                sym_list_str = "\n".join(f"- {s['symbol_name']} ({s['kind']} in {s['file_path']})" for s in candidate_syms)
+                symbol_context = f"\n\nDiscovered verified symbols in codebase:\n{sym_list_str}\nUse these exact symbols in your search queries when relevant."
+    except Exception as e:
+        print(f"Notice: Candidate symbol lookup skipped: {e}", file=sys.stderr)
 
     api_key = get_gemini_api_key()
     if not api_key:
@@ -51,10 +65,17 @@ def plan_node(state: AgentState) -> dict:
         client = GeminiClientWrapper(api_key=api_key)
         if retry_count > 0 and unverified:
             claims_str = "\n".join(f"- {c}" for c in unverified)
-            prompt = RETRY_PLAN_PROMPT.format(sub_question=current_sub_q, unverified_claims=claims_str)
+            prompt = RETRY_PLAN_PROMPT.format(
+                sub_question=current_sub_q,
+                unverified_claims=claims_str,
+                symbol_context=symbol_context
+            )
             temp = 0.3
         else:
-            prompt = PLAN_PROMPT.format(sub_question=current_sub_q)
+            prompt = PLAN_PROMPT.format(
+                sub_question=current_sub_q,
+                symbol_context=symbol_context
+            )
             temp = 0.0
 
         result = client.generate_json(
@@ -68,4 +89,3 @@ def plan_node(state: AgentState) -> dict:
     except Exception as e:
         print(f"Error in plan_node: {e}", file=sys.stderr)
         return {"search_queries": [current_sub_q]}
-

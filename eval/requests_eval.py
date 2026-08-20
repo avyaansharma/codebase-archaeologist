@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+os.environ["DATABASE_URL"] = os.getenv("REQUESTS_DATABASE_URL", "sqlite:///./eval/data/requests.db")
+os.environ["BM25_INDEX_PATH"] = os.getenv("REQUESTS_BM25_PATH", os.path.abspath("eval/data/requests_bm25.bin"))
+
 REQUESTS_QA_PAIRS = [
     {
         "id": 1,
@@ -59,7 +62,7 @@ RESULTS_PATH = os.path.join("eval", "requests_results.json")
 def run_requests_eval():
     from archaeologist.mcp_server.tools import ask_tool
     from archaeologist.utils.gemini_client import GeminiClientWrapper
-    from eval.metrics import evaluate_atomic_propositions, compute_citation_metrics, compute_rouge_l
+    from eval.metrics import evaluate_atomic_propositions, compute_citation_metrics, compute_rouge_l, compute_calibrated_grounded_accuracy
     
     gemini = GeminiClientWrapper()
     scores = []
@@ -103,8 +106,8 @@ def run_requests_eval():
         rouge_res = compute_rouge_l(generated, expected)
         rouge_l_scores.append(rouge_res["f1"])
 
-        # 4. Calibrated Grounded Accuracy (50% Fact Entailment + 30% Citation Recall + 20% ROUGE-L)
-        acc_score = (0.50 * entail_rate) + (0.30 * citation_rec) + (0.20 * min(1.0, rouge_res["f1"] * 2.0))
+        # 4. Calibrated Grounded Accuracy (70% Fact Entailment + 30% Citation F1)
+        acc_score = compute_calibrated_grounded_accuracy(entail_rate, citation_f1, has_citations=bool(expected_refs))
         scores.append(acc_score)
 
         detailed_results.append({

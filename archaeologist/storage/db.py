@@ -37,21 +37,30 @@ def init_db(db_url: Optional[str] = None):
                 conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
                 for table in ["commit", "pullrequest", "issue", "chunk", "symbolindex"]:
                     try:
-                        conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN repo_id VARCHAR;")
+                        conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN repo_id VARCHAR;')
                     except Exception:
                         pass
                 conn.commit()
+
         except Exception as e:
             print(f"Notice: Could not set SQLite PRAGMA WAL mode or migrate columns: {e}", file=sys.stderr)
 
 
 def get_session() -> Session:
-    """Returns a new SQLModel database session."""
+    """Returns a new SQLModel database session, dynamically syncing with active DATABASE_URL."""
+    global engine, DATABASE_URL
+    current_url = os.getenv("DATABASE_URL", "sqlite:///./archaeologist.db")
+    if current_url != DATABASE_URL:
+        init_db(current_url)
     return Session(engine)
 
 @contextmanager
 def get_session_context() -> Generator[Session, None, None]:
-    """Context manager yielding a session with automatic rollback on error and closure."""
+    """Context manager yielding a session with dynamic DATABASE_URL synchronization and automatic rollback."""
+    global engine, DATABASE_URL
+    current_url = os.getenv("DATABASE_URL", "sqlite:///./archaeologist.db")
+    if current_url != DATABASE_URL:
+        init_db(current_url)
     session = Session(engine)
     try:
         yield session
@@ -61,3 +70,4 @@ def get_session_context() -> Generator[Session, None, None]:
         raise
     finally:
         session.close()
+

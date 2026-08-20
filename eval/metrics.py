@@ -125,3 +125,10 @@ def evaluate_atomic_propositions(generated: str, propositions: List[str], gemini
         "passed_count": true_count,
         "total_propositions": len(propositions)
     }
+
+def compute_calibrated_grounded_accuracy(entailment_rate: float, citation_f1: float, has_citations: bool = True) -> float:
+    """Computes calibrated Grounded Accuracy score combining 70% Fact Entailment and 30% Citation F1."""
+    if not has_citations:
+        return entailment_rate
+    return (0.70 * entailment_rate) + (0.30 * citation_f1)
+

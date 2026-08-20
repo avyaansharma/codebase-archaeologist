@@ -24,9 +24,21 @@ def chunk_commit(commit: dict, diff_summary: str | None, repo_id: Optional[str] 
     sym_header = f"\nSymbols Modified: {symbols_str}" if symbols_str else ""
     raw_msg = commit.get("message") or ""
     
-    text = f"Commit {commit['sha']} by {commit['author_name']}\nMessage: {raw_msg}{sym_header}\n\nDiff Summary:\n{body}".strip()
+    # Enrich with causal revert metadata
+    revert_meta = ""
+    related_ids = list(commit.get("related_ids", []))
+    if commit.get("reverts_sha"):
+        revert_meta += f"\n[Reverts Commit]: {commit['reverts_sha']}"
+        if commit["reverts_sha"] not in related_ids:
+            related_ids.append(commit["reverts_sha"])
+    if commit.get("superseded_by_sha"):
+        revert_meta += f"\n[Superseded by Revert]: {commit['superseded_by_sha']}"
+        if commit["superseded_by_sha"] not in related_ids:
+            related_ids.append(commit["superseded_by_sha"])
+    
+    text = f"Commit {commit['sha']} by {commit['author_name']}\nMessage: {raw_msg}{sym_header}{revert_meta}\n\nDiff Summary:\n{body}".strip()
     if token_count(text) > 500:
-        msg_text = f"Commit {commit['sha']} by {commit['author_name']}\nMessage: {raw_msg}{sym_header}\n\nDiff Summary:\n"
+        msg_text = f"Commit {commit['sha']} by {commit['author_name']}\nMessage: {raw_msg}{sym_header}{revert_meta}\n\nDiff Summary:\n"
         msg_tokens = token_count(msg_text)
         budget = max(500 - msg_tokens, 50)
         body_tokens = enc.encode(body)[:budget]
@@ -45,7 +57,7 @@ def chunk_commit(commit: dict, diff_summary: str | None, repo_id: Optional[str] 
         "symbols_modified": commit.get("symbols_modified", []),
         "is_reverted": commit.get("is_revert", False),
         "token_count": token_count(text),
-        "related_ids": commit.get("related_ids", [])
+        "related_ids": related_ids
     }]
 
     # Handle squash-merge bullet items or long multi-topic commit messages

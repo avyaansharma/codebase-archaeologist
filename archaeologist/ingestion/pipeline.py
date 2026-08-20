@@ -344,7 +344,9 @@ class IngestionPipeline:
             print(f"Fitting BM25 index on {len(all_chunk_dicts)} chunks...", file=sys.stderr)
             bm25 = BM25Index()
             bm25.fit(all_chunk_dicts)
-            bm25.save("bm25_index.bin")
+            bm25_save_path = os.getenv("BM25_INDEX_PATH", "bm25_index.bin")
+            bm25.save(bm25_save_path)
+
 
         # 6b. Qdrant Dense Index
         with get_session_context() as session:

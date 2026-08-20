@@ -141,7 +141,8 @@ def find_related_discussion_tool(ref: str) -> Dict[str, Any]:
                         from archaeologist.utils.security import escape_like
                         escaped_num = escape_like(str(pr.number))
                         stmt_commits = select(Commit).where(Commit.message.like(f"%#{escaped_num}%", escape="\\")).limit(50)
-                        linked_commits = session.exec(stmt_commits).all()
+                        candidates = session.exec(stmt_commits).all()
+                        linked_commits = [c for c in candidates if re.search(r'#' + re.escape(str(pr.number)) + r'\b', c.message)]
                     
                     for c in linked_commits:
                         result["commits"].append({"sha": c.sha, "message": c.message, "author": c.author_name})
@@ -169,7 +170,9 @@ def find_related_discussion_tool(ref: str) -> Dict[str, Any]:
                         from archaeologist.utils.security import escape_like
                         escaped_num = escape_like(str(issue.number))
                         stmt_commits = select(Commit).where(Commit.message.like(f"%#{escaped_num}%", escape="\\")).limit(50)
-                        linked_commits = session.exec(stmt_commits).all()
+                        candidates = session.exec(stmt_commits).all()
+                        linked_commits = [c for c in candidates if re.search(r'#' + re.escape(str(issue.number)) + r'\b', c.message)]
+
 
                     for c in linked_commits:
                         if not any(existing["sha"] == c.sha for existing in result["commits"]):

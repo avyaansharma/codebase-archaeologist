@@ -49,6 +49,15 @@ def test_find_related_discussion_tool_fast_lookup():
     """Verify find_related_discussion_tool searches linked commits efficiently without full table scan."""
     from datetime import datetime
     with get_session_context() as session:
+        # Clean up any existing fixture
+        existing_pr = session.get(PullRequest, 42)
+        if existing_pr:
+            session.delete(existing_pr)
+        existing_c = session.get(Commit, "a1b2c3d4e5f67890123456789012345678901234")
+        if existing_c:
+            session.delete(existing_c)
+        session.commit()
+
         pr = PullRequest(
             number=42,
             title="Refactor auth pipeline",
@@ -81,6 +90,13 @@ def test_follow_links_node_db_context():
     """Verify follow_links_node uses session context safely and resolves related IDs."""
     from datetime import datetime
     with get_session_context() as session:
+        # Clean up any existing fixture
+        for cid in ["chunk-linked-123", "chunk-linked-456"]:
+            existing_chunk = session.get(Chunk, cid)
+            if existing_chunk:
+                session.delete(existing_chunk)
+        session.commit()
+
         c1 = Chunk(
             id="chunk-linked-123",
             source_type="pr",
@@ -105,6 +121,7 @@ def test_follow_links_node_db_context():
         )
         session.add(c1)
         session.add(c2)
+
 
     state = {
         "retrieved_chunks": [{

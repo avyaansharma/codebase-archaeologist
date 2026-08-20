@@ -87,32 +87,31 @@ def test_vector_store_fallback_flag():
     store.close()
 
 def test_update_cross_links_accepts_orm_session():
-    from archaeologist.storage.db import init_db, get_session
-    from archaeologist.storage.models import PullRequest, Issue
+    from sqlmodel import create_engine, Session, SQLModel
     from archaeologist.ingestion.link_resolver import update_cross_links
+    from archaeologist.storage.models import PullRequest, Issue
     from datetime import datetime
-    
-    init_db("sqlite:///:memory:")
-    session = get_session()
 
-    p_num = 1010
-    i_num = 1020
+    test_engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(test_engine)
+    with Session(test_engine) as session:
+        p_num = 1010
+        i_num = 1020
 
+        pr = PullRequest(number=p_num, title=f"Fix issue #{i_num}", body=f"Closes #{i_num}", author="alice", state="closed", created_at=datetime.utcnow())
+        issue = Issue(number=i_num, title="Bug in auth", body="Found bug abc12345", state="open", author="bob", created_at=datetime.utcnow())
+        session.add(pr)
+        session.add(issue)
+        session.commit()
 
-    pr = PullRequest(number=p_num, title=f"Fix issue #{i_num}", body=f"Closes #{i_num}", author="alice", state="closed", created_at=datetime.utcnow())
-    issue = Issue(number=i_num, title="Bug in auth", body="Found bug abc12345", state="open", author="bob", created_at=datetime.utcnow())
-    session.add(pr)
-    session.add(issue)
-    session.commit()
+        update_cross_links(session)
 
-    update_cross_links(session)
+        updated_pr = session.get(PullRequest, p_num)
+        updated_issue = session.get(Issue, i_num)
 
-    updated_pr = session.get(PullRequest, p_num)
-    updated_issue = session.get(Issue, i_num)
+        assert i_num in updated_pr.linked_issue_numbers
+        assert p_num in updated_issue.linked_pr_numbers
 
-    assert i_num in updated_pr.linked_issue_numbers
-    assert p_num in updated_issue.linked_pr_numbers
-    session.close()
 
 
 def test_increment_retry_resets_sub_question_index():

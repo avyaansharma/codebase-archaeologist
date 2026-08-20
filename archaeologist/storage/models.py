@@ -88,3 +88,41 @@ def is_valid_pr_or_issue(session, ref_num: int) -> bool:
     issue_stmt = select(Issue.number).where(Issue.number == ref_num)
     return session.exec(issue_stmt).first() is not None
 
+def find_candidate_symbols(session, text: str, repo_id: Optional[str] = None, limit: int = 8) -> List[dict]:
+    """Finds candidate code symbols matching key tokens in the question text to ground planning."""
+    if not text:
+        return []
+    import re
+    from archaeologist.utils.security import escape_like
+    
+    words = set(re.findall(r'[A-Za-z_][A-Za-z0-9_]{3,}', text))
+    stopwords = {"what", "when", "where", "which", "does", "from", "with", "this", "that", "have", "been", "were", "commit", "commits", "pull", "request", "issue", "repository", "history", "code", "file", "method", "function", "class", "architecture", "handle", "using"}
+    candidates = [w for w in words if w.lower() not in stopwords]
+    
+    if not candidates:
+        return []
+    
+    matched = []
+    seen = set()
+    for word in candidates:
+        escaped = escape_like(word)
+        stmt = select(SymbolIndex).where(
+            (SymbolIndex.symbol_name.like(f"%{escaped}%", escape="\\")) |
+            (SymbolIndex.file_path.like(f"%{escaped}%", escape="\\"))
+        )
+        if repo_id:
+            stmt = stmt.where(SymbolIndex.repo_id == repo_id)
+        stmt = stmt.limit(limit)
+        results = session.exec(stmt).all()
+        for r in results:
+            if r.symbol_id not in seen:
+                matched.append({
+                    "symbol_name": r.symbol_name,
+                    "file_path": r.file_path,
+                    "kind": r.kind
+                })
+                seen.add(r.symbol_id)
+                if len(matched) >= limit:
+                    return matched
+    return matched
+
