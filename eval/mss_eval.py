@@ -30,8 +30,8 @@ MSS_QA_PAIRS = [
             "explicitly kept the added test in place rather than removing it."
         ),
         "expected_evidence": [
-            "5e5f3eecc87660b73d11c4c964571f1515c09531",
-            "2d24115320534460c9f5f510c429dd36f838d457",
+            "5e5f3ee",
+            "2d24115"
         ],
         "difficulty": "hard",
         "blind_test_notes": (
@@ -61,7 +61,11 @@ MSS_QA_PAIRS = [
             "thread-safety features Xlib offers, so Xlib kept its own dedicated lock object "
             "separate from the new per-object scheme used elsewhere."
         ),
-        "expected_evidence": ["06dc84550512de2edef633019c849ea48b11b39a"],
+        "expected_evidence": [
+            "06dc845",
+            "pr#452",
+            "PR #452"
+        ],
         "difficulty": "medium",
         "blind_test_notes": (
             "Medium-high confidence: a model might guess 'global locks cause contention, so they "
@@ -91,7 +95,14 @@ MSS_QA_PAIRS = [
             "that memoryviews can be used as context managers' and release their buffers automatically "
             "at the end of a `with` block, replacing the original approach with this simpler pattern."
         ),
-        "expected_evidence": ["0822b334a90193a297f8b31158df061ba16acb11", "9637209"],
+        "expected_evidence": [
+            "0822b33",
+            "9637209",
+            "pr#467",
+            "pr#468",
+            "PR #467",
+            "PR #468"
+        ],
         "difficulty": "hard",
         "blind_test_notes": (
             "High confidence: the specific detail that the second PR's motivation was the author "
@@ -120,7 +131,13 @@ MSS_QA_PAIRS = [
             "`mss.{platform}.MSS` types, with a stated plan to keep the factory function available "
             "for a transition period while deprecated functionality emits DeprecationWarnings."
         ),
-        "expected_evidence": ["8a7bbc238c09b52ca1091915293099afeceea7d6", "issue#486"],
+        "expected_evidence": [
+            "8a7bbc2",
+            "pr#494",
+            "PR #494",
+            "issue#486",
+            "Issue #486"
+        ],
         "difficulty": "medium",
         "blind_test_notes": (
             "Medium confidence: 'moved to strategy pattern for extensibility' is a somewhat guessable "
@@ -154,7 +171,12 @@ MSS_QA_PAIRS = [
         "expected_evidence": [
             "8575606",
             "712503a",
+            "pr#426",
+            "pr#431",
+            "PR #426",
+            "PR #431",
             "issue#425",
+            "Issue #425"
         ],
         "difficulty": "hard",
         "blind_test_notes": (
@@ -170,6 +192,7 @@ MSS_QA_PAIRS = [
         ]
     },
 ]
+
 
 
 RESULTS_PATH = os.path.join("eval", "mss_results.json")

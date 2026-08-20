@@ -53,24 +53,48 @@ def compute_semantic_cosine_similarity(text1: str, text2: str, embedder: Optiona
     return max(0.0, min(1.0, dot / (norm1 * norm2)))
 
 def compute_citation_metrics(generated: str, expected_refs: List[str]) -> Dict[str, float]:
-    """Computes Citation Recall, Precision, and F1 based on expected references."""
+    """Computes Citation Recall, Precision, and F1 based on canonicalized references."""
     if not expected_refs:
         return {"recall": 1.0, "precision": 1.0, "f1": 1.0}
     
     gen_lower = generated.lower()
-    matches = sum(1 for ref in expected_refs if ref.lower() in gen_lower)
-    recall = float(matches) / len(expected_refs)
     
-    # Extract total references cited in generated answer (SHAs, PRs, Issues)
-    cited_shas = set(re.findall(r'\b[0-9a-fA-F]{7,40}\b', generated))
-    cited_prs = set(re.findall(r'PR\s*#?(\d+)', generated, re.IGNORECASE))
-    cited_issues = set(re.findall(r'Issue\s*#?(\d+)', generated, re.IGNORECASE))
-    total_cited = len(cited_shas) + len(cited_prs) + len(cited_issues)
+    # 1. Canonicalize extracted SHA hashes (deduplicating short prefixes of full SHAs)
+    raw_shas = set(re.findall(r'\b[0-9a-fA-F]{7,40}\b', generated))
+    canonical_shas = set()
+    sorted_shas = sorted(raw_shas, key=len, reverse=True)
+    for s in sorted_shas:
+        s_lower = s.lower()
+        if not any(s_lower != existing and existing.startswith(s_lower) for existing in canonical_shas):
+            canonical_shas.add(s_lower)
+            
+    # 2. Extract PR numbers and Issue numbers
+    cited_prs = {f"pr#{m}" for m in re.findall(r'PR\s*#?(\d+)', generated, re.IGNORECASE)}
+    cited_issues = {f"issue#{m}" for m in re.findall(r'Issue\s*#?(\d+)', generated, re.IGNORECASE)}
     
-    if total_cited == 0:
+    all_cited_entities = canonical_shas | cited_prs | cited_issues
+    
+    # 3. Check expected references recall
+    matched_expected = 0
+    for exp in expected_refs:
+        exp_clean = exp.lower().strip()
+        if any(exp_clean in entity or entity in exp_clean for entity in all_cited_entities) or exp_clean in gen_lower:
+            matched_expected += 1
+            
+    recall = float(matched_expected) / len(expected_refs) if expected_refs else 1.0
+    
+    # 4. Precision: proportion of cited entities that match expected references
+    relevant_cited = 0
+    for entity in all_cited_entities:
+        if any(exp.lower().strip() in entity or entity in exp.lower().strip() for exp in expected_refs):
+            relevant_cited += 1
+            
+    if not all_cited_entities:
         precision = 0.0
+    elif relevant_cited > 0:
+        precision = min(1.0, float(relevant_cited) / len(all_cited_entities))
     else:
-        precision = min(1.0, float(matches) / total_cited)
+        precision = 1.0 if recall >= 1.0 else 0.0
         
     f1 = (2.0 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
     
@@ -79,6 +103,7 @@ def compute_citation_metrics(generated: str, expected_refs: List[str]) -> Dict[s
         "precision": precision,
         "f1": f1
     }
+
 
 def evaluate_atomic_propositions(generated: str, propositions: List[str], gemini: Optional[GeminiClientWrapper] = None) -> Dict[str, Any]:
     """Evaluates whether each atomic proposition from the expected ground-truth is entailed by the generated answer."""
