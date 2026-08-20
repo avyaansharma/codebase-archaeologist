@@ -3,7 +3,7 @@ import ast
 import tiktoken
 import uuid
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 enc = tiktoken.get_encoding("cl100k_base")
@@ -18,7 +18,7 @@ def make_deterministic_chunk_id(source_type: str, source_id: str, index: int = 0
     key = f"{source_type}:{source_id}:{index}:{text_snippet[:60]}"
     return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
 
-def chunk_commit(commit: dict, diff_summary: str | None) -> List[dict]:
+def chunk_commit(commit: dict, diff_summary: str | None, repo_id: Optional[str] = None) -> List[dict]:
     body = diff_summary or ""
     symbols_str = ", ".join(commit.get("symbols_modified", []))
     sym_header = f"\nSymbols Modified: {symbols_str}" if symbols_str else ""
@@ -36,6 +36,7 @@ def chunk_commit(commit: dict, diff_summary: str | None) -> List[dict]:
     chunk_id = make_deterministic_chunk_id("commit", commit["sha"], 0, text)
     chunks = [{
         "id": chunk_id,
+        "repo_id": repo_id or commit.get("repo_id"),
         "source_type": "commit",
         "source_id": commit["sha"],
         "text": text,
@@ -57,6 +58,7 @@ def chunk_commit(commit: dict, diff_summary: str | None) -> List[dict]:
             sub_id = make_deterministic_chunk_id("commit", commit["sha"], idx, sub_text)
             chunks.append({
                 "id": sub_id,
+                "repo_id": repo_id or commit.get("repo_id"),
                 "source_type": "commit",
                 "source_id": commit["sha"],
                 "text": sub_text,
@@ -77,6 +79,7 @@ def chunk_commit(commit: dict, diff_summary: str | None) -> List[dict]:
                 sub_id = make_deterministic_chunk_id("commit", commit["sha"], idx, sub_text)
                 chunks.append({
                     "id": sub_id,
+                    "repo_id": repo_id or commit.get("repo_id"),
                     "source_type": "commit",
                     "source_id": commit["sha"],
                     "text": sub_text,
@@ -90,10 +93,11 @@ def chunk_commit(commit: dict, diff_summary: str | None) -> List[dict]:
 
     return chunks
 
-def chunk_issue(issue: dict) -> List[dict]:
+def chunk_issue(issue: dict, repo_id: Optional[str] = None) -> List[dict]:
     chunks = []
     source_id = f"issue#{issue['number']}"
     author_name = issue.get("author") or "unknown"
+    actual_repo_id = repo_id or issue.get("repo_id")
     
     related_ids = [f"pr#{num}" for num in issue.get("linked_pr_numbers", [])]
     for sha in issue.get("linked_commit_shas", []):
@@ -112,6 +116,7 @@ def chunk_issue(issue: dict) -> List[dict]:
     chunk_id_head = make_deterministic_chunk_id("issue", source_id, 0, issue_start)
     chunks.append({
         "id": chunk_id_head,
+        "repo_id": actual_repo_id,
         "source_type": "issue",
         "source_id": source_id,
         "text": issue_start,
@@ -143,6 +148,7 @@ def chunk_issue(issue: dict) -> List[dict]:
         chunk_id_comm = make_deterministic_chunk_id("issue", source_id, idx, comment_text)
         chunks.append({
             "id": chunk_id_comm,
+            "repo_id": actual_repo_id,
             "source_type": "issue",
             "source_id": source_id,
             "text": comment_text,
@@ -156,10 +162,11 @@ def chunk_issue(issue: dict) -> List[dict]:
 
     return chunks
 
-def chunk_pr(pr: dict) -> List[dict]:
+def chunk_pr(pr: dict, repo_id: Optional[str] = None) -> List[dict]:
     chunks = []
     source_id = f"pr#{pr['number']}"
     author_name = pr.get("author") or "unknown"
+    actual_repo_id = repo_id or pr.get("repo_id")
     
     related_ids = [f"issue#{num}" for num in pr.get("linked_issue_numbers", [])]
     if pr.get("merged_commit_sha"):
@@ -182,6 +189,7 @@ def chunk_pr(pr: dict) -> List[dict]:
     chunk_id_head = make_deterministic_chunk_id("pr", source_id, 0, pr_start)
     chunks.append({
         "id": chunk_id_head,
+        "repo_id": actual_repo_id,
         "source_type": "pr",
         "source_id": source_id,
         "text": pr_start,
@@ -218,6 +226,7 @@ def chunk_pr(pr: dict) -> List[dict]:
         chunk_id_comm = make_deterministic_chunk_id("pr", source_id, idx_count, comment_text)
         chunks.append({
             "id": chunk_id_comm,
+            "repo_id": actual_repo_id,
             "source_type": "pr",
             "source_id": source_id,
             "text": comment_text,
@@ -251,6 +260,7 @@ def chunk_pr(pr: dict) -> List[dict]:
         chunk_id_comm = make_deterministic_chunk_id("pr", source_id, idx_count, comment_text)
         chunks.append({
             "id": chunk_id_comm,
+            "repo_id": actual_repo_id,
             "source_type": "pr",
             "source_id": source_id,
             "text": comment_text,
@@ -301,7 +311,7 @@ def _build_class_header(node: ast.ClassDef, lines: List[str], rel_path: str) -> 
     return "\n".join(header_parts)
 
 
-def chunk_codebase(repo_path: str) -> List[dict]:
+def chunk_codebase(repo_path: str, repo_id: Optional[str] = None) -> List[dict]:
     """Walks the target codebase repository, parses AST symbols in current Python files,
     and creates baseline code chunks.
     
@@ -387,6 +397,7 @@ def chunk_codebase(repo_path: str) -> List[dict]:
                             header_id = make_deterministic_chunk_id("code", f"{rel_path}:{node.name}", idx, header_chunk_text)
                             chunks.append({
                                 "id": header_id,
+                                "repo_id": repo_id,
                                 "source_type": "code",
                                 "source_id": rel_path,
                                 "text": header_chunk_text,
@@ -418,6 +429,7 @@ def chunk_codebase(repo_path: str) -> List[dict]:
                                 )
                                 chunks.append({
                                     "id": method_id,
+                                    "repo_id": repo_id,
                                     "source_type": "code",
                                     "source_id": rel_path,
                                     "text": method_chunk_text,
@@ -446,6 +458,7 @@ def chunk_codebase(repo_path: str) -> List[dict]:
                             chunk_id = make_deterministic_chunk_id("code", f"{rel_path}:{node.name}", idx, chunk_text)
                             chunks.append({
                                 "id": chunk_id,
+                                "repo_id": repo_id,
                                 "source_type": "code",
                                 "source_id": rel_path,
                                 "text": chunk_text,
@@ -462,6 +475,7 @@ def chunk_codebase(repo_path: str) -> List[dict]:
                     chunk_id = make_deterministic_chunk_id("code", rel_path, 0, chunk_text)
                     chunks.append({
                         "id": chunk_id,
+                        "repo_id": repo_id,
                         "source_type": "code",
                         "source_id": rel_path,
                         "text": chunk_text,

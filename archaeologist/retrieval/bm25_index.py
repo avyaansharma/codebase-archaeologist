@@ -30,7 +30,8 @@ class BM25Index:
         limit: int = 10,
         file_path: Optional[str] = None,
         source_types: Optional[List[str]] = None,
-        is_reverted: Optional[bool] = None
+        is_reverted: Optional[bool] = None,
+        repo_id: Optional[str] = None
     ) -> List[dict]:
         """Performs a BM25 keyword search with flexible metadata filters and returns ranked chunks."""
         if not self.bm25 or not self.chunks:
@@ -48,6 +49,12 @@ class BM25Index:
                 continue
                 
             chunk = self.chunks[idx]
+
+            # Structural repo_id filter
+            if repo_id:
+                c_repo = chunk.get("repo_id")
+                if c_repo and c_repo.lower() != repo_id.lower() and repo_id.lower() not in c_repo.lower():
+                    continue
             
             # Structural file_path filter matching against chunk.file_paths
             if file_path:
@@ -55,7 +62,6 @@ class BM25Index:
                 c_paths = [p.lower() for p in chunk.get("file_paths", [])]
                 if not any(fp_lower in p or p.endswith(fp_lower) or fp_lower.endswith(p) for p in c_paths):
                     continue
-
 
             if is_reverted is not None and chunk.get("is_reverted") != is_reverted:
                 continue

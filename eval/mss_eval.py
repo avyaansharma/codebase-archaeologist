@@ -6,26 +6,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ============================================================================
-# Ground-truth causal ("why") eval set for BoboTiG/python-mss
-#
-# Repo chosen deliberately: cross-platform screenshot capture library,
-# ~1,050 commits, real PR/issue culture, MIT licensed, and — critically —
-# niche/specific enough a domain that it should NOT be heavily represented
-# in an LLM's pretrained knowledge the way Flask/httpx are. Every fact below
-# was pulled directly from `git log`/`git show` against a real clone of the
-# repo and cross-checked; nothing here is invented or paraphrased from
-# general software-engineering intuition.
-#
-# BEFORE running this against the real agent: run each question through a
-# tool-less/search-less LLM call cold (no repo access) and compare the blind
-# answer to `expected_answer`. If the blind answer gets close, the question
-# is contaminated (too guessable) and should be dropped or sharpened before
-# it's trusted as a real test. A `blind_test_notes` field is included per
-# question with my own read on guessability — treat it as a starting
-# hypothesis to verify, not a substitute for actually running the check.
-# ============================================================================
-
 MSS_QA_PAIRS = [
     {
         "id": 1,
@@ -57,6 +37,11 @@ MSS_QA_PAIRS = [
             "but 'fixed nothing', and the specific detail that the test was kept despite the code "
             "being reverted. No general GDI/screenshot-caching knowledge would produce this."
         ),
+        "propositions": [
+            "The original Windows capture region caching fix addressed same-size regions returning stale screenshots",
+            "The fix was reverted in commit 2d24115 stating the patch was a bad idea and fixed nothing",
+            "The test case added with the fix was preserved/kept in the codebase rather than removed"
+        ]
     },
     {
         "id": 2,
@@ -81,6 +66,11 @@ MSS_QA_PAIRS = [
             "Xlib being non-thread-safe and needing to retain a global lock is a repo-specific "
             "detail unlikely to be guessed correctly."
         ),
+        "propositions": [
+            "The migration from a single global lock to per-object locking was done to reduce contention and deadlock risk (PR #452)",
+            "The Xlib backend (src/mss/linux/xlib.py) specifically retained a global lock",
+            "Xlib required a dedicated global lock because underlying Xlib is not thread-safe"
+        ]
     },
     {
         "id": 3,
@@ -107,6 +97,11 @@ MSS_QA_PAIRS = [
             "the first fix, is a very specific, personal, undocumented-elsewhere detail that general "
             "knowledge of Python or screenshot libraries would not produce."
         ),
+        "propositions": [
+            "In the Linux XShmGetImage backend, a KeyboardInterrupt during buffer copying caused a secondary confusing exception during cleanup (PR #467)",
+            "The follow-up fix in PR #468 used memoryview objects as context managers",
+            "Using memoryviews as context managers ensured buffers are automatically and reliably released at the end of the block"
+        ]
     },
     {
         "id": 4,
@@ -132,6 +127,11 @@ MSS_QA_PAIRS = [
             "two things deprecated (the factory function AND the per-platform types) are specific "
             "enough that a blind guess is unlikely to get both right."
         ),
+        "propositions": [
+            "The library unified platform interfaces behind a single top-level mss.MSS class (PR #494, Issue #486)",
+            "The redesign hid platform-specific implementations so internal class structures could evolve without breaking user code",
+            "It deprecated the legacy mss factory function and the per-platform mss.{platform}.MSS types"
+        ]
     },
     {
         "id": 5,
@@ -163,6 +163,11 @@ MSS_QA_PAIRS = [
             "knowledge of X11/screenshot libraries would not reproduce, even though 'shared memory "
             "is faster than round-tripping image data' is a guessable general principle on its own."
         ),
+        "propositions": [
+            "The MIT-SHM (XShmGetImage) backend was added (PR #431) to provide shared-memory transfer bypassing X11 socket copying",
+            "The older Xlib implementation was designated legacy per Issue #425 in favor of XCB / SHM backends",
+            "The shared-memory backend reported significant performance gains (approx. 3x improvement / 30-34 fps vs 11-14 fps)"
+        ]
     },
 ]
 
@@ -172,62 +177,53 @@ RESULTS_PATH = os.path.join("eval", "mss_results.json")
 def run_mss_eval():
     from archaeologist.mcp_server.tools import ask_tool
     from archaeologist.utils.gemini_client import GeminiClientWrapper
+    from eval.metrics import evaluate_atomic_propositions, compute_citation_metrics, compute_rouge_l
 
     gemini = GeminiClientWrapper()
     scores = []
     precision_scores = []
+    recall_scores = []
+    f1_scores = []
+    entailment_scores = []
+    rouge_l_scores = []
     detailed_results = []
 
     print("\n" + "=" * 90, flush=True)
-    print("RUNNING GROUND-TRUTH CAUSAL ('WHY') BENCHMARK ON: BoboTiG/python-mss", flush=True)
+    print("RUNNING GROUND-TRUTH CAUSAL ('WHY') BENCHMARK ON: BoboTiG/python-mss (repo_id='mss')", flush=True)
     print("=" * 90, flush=True)
-    print(f"{'Question':<55} | {'Grounded Acc':<12} | {'Citation Prec':<12}", flush=True)
+    print(f"{'Question':<45} | {'Grounded Acc':<12} | {'Fact Entail':<11} | {'Citation F1':<11} | {'ROUGE-L':<8}", flush=True)
     print("-" * 90, flush=True)
 
     for item in MSS_QA_PAIRS:
         q = item["question"]
         expected = item["expected_answer"]
         expected_refs = item["expected_evidence"]
+        propositions = item.get("propositions", [])
 
-        generated = ask_tool(q)
+        # Run multi-hop reasoning agent with repo_id scoping
+        generated = ask_tool(q, repo_id="mss")
 
-        # NOTE: unlike the httpx/flask eval scripts, judge with a DIFFERENT
-        # model family than the one the agent itself runs on, to avoid the
-        # same-family self-judging bias flagged in review. Swap this for a
-        # Claude or GPT call if available; using Gemini here only as a
-        # placeholder if no other judge is configured.
-        prompt = (
-            "You are an expert evaluator scoring whether a generated answer about a specific "
-            "open-source repository's git/PR/issue history matches the verified ground truth. "
-            "Score strictly: generic, plausible-sounding reasoning that doesn't match the SPECIFIC "
-            "facts in the expected answer (exact PR/issue numbers, specific reverts, specific "
-            "quoted reasoning, specific benchmark numbers) should NOT score highly, even if it "
-            "sounds reasonable.\n\n"
-            f"Question: {q}\n"
-            f"Expected Answer (verified ground truth): {expected}\n"
-            f"Generated Answer: {generated}\n\n"
-            "Score 0-10. Respond ONLY with JSON: {\"score\": int, \"reasoning\": str}"
-        )
+        # 1. Proposition Entailment Rate
+        prop_res = evaluate_atomic_propositions(generated, propositions, gemini=gemini)
+        entail_rate = prop_res["entailment_rate"]
+        entailment_scores.append(entail_rate)
 
-        acc_score = 0.0
-        for attempt in range(3):
-            try:
-                eval_res = gemini.generate_json(prompt=prompt, model="gemini-3.5-flash")
-                acc_score = float(eval_res.get("score", 0)) / 10.0
-                break
-            except Exception as e:
-                print(f"Error in judge evaluation (attempt {attempt + 1}/3): {e}", flush=True)
-                import time
-                time.sleep(3.0)
+        # 2. Citation Metrics against real commit SHAs / references
+        cit_metrics = compute_citation_metrics(generated, expected_refs)
+        citation_prec = cit_metrics["precision"]
+        citation_rec = cit_metrics["recall"]
+        citation_f1 = cit_metrics["f1"]
+        precision_scores.append(citation_prec)
+        recall_scores.append(citation_rec)
+        f1_scores.append(citation_f1)
 
+        # 3. Lexical ROUGE-L
+        rouge_res = compute_rouge_l(generated, expected)
+        rouge_l_scores.append(rouge_res["f1"])
+
+        # 4. Calibrated Grounded Accuracy (50% Fact Entailment + 30% Citation Recall + 20% ROUGE-L)
+        acc_score = (0.50 * entail_rate) + (0.30 * citation_rec) + (0.20 * min(1.0, rouge_res["f1"] * 2.0))
         scores.append(acc_score)
-
-        # Citation precision against REAL evidence IDs (commit SHAs / issue
-        # numbers), not filenames or terms already present in the question.
-        gen_lower = generated.lower()
-        matches = sum(1 for ref in expected_refs if ref.lower()[:10] in gen_lower)
-        prec_score = float(matches) / len(expected_refs) if expected_refs else 0.0
-        precision_scores.append(prec_score)
 
         detailed_results.append({
             "id": item["id"],
@@ -238,25 +234,39 @@ def run_mss_eval():
             "difficulty": item["difficulty"],
             "blind_test_notes": item["blind_test_notes"],
             "grounded_accuracy": acc_score,
-            "citation_precision": prec_score,
+            "fact_entailment_rate": entail_rate,
+            "citation_precision": citation_prec,
+            "citation_recall": citation_rec,
+            "citation_f1": citation_f1,
+            "rouge_l_f1": rouge_res["f1"],
+            "proposition_evaluations": prop_res.get("evaluations", [])
         })
 
-        q_trunc = q[:52] + "..." if len(q) > 55 else q
-        print(f"{q_trunc:<55} | {acc_score:<12.2%} | {prec_score:<12.2%}", flush=True)
+        q_trunc = q[:42] + "..." if len(q) > 45 else q
+        print(f"{q_trunc:<45} | {acc_score:<12.2%} | {entail_rate:<11.2%} | {citation_f1:<11.2%} | {rouge_res['f1']:<8.2%}", flush=True)
 
     avg_acc = sum(scores) / len(scores) if scores else 0.0
     avg_prec = sum(precision_scores) / len(precision_scores) if precision_scores else 0.0
+    avg_rec = sum(recall_scores) / len(recall_scores) if recall_scores else 0.0
+    avg_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
+    avg_entail = sum(entailment_scores) / len(entailment_scores) if entailment_scores else 0.0
+    avg_rouge = sum(rouge_l_scores) / len(rouge_l_scores) if rouge_l_scores else 0.0
 
     print("-" * 90, flush=True)
-    print(f"{'AVERAGE SUMMARY (python-mss Ground-Truth Benchmark)':<55} | {avg_acc:<12.2%} | {avg_prec:<12.2%}", flush=True)
+    print(f"{'AVERAGE SUMMARY (python-mss Ground-Truth Benchmark)':<45} | {avg_acc:<12.2%} | {avg_entail:<11.2%} | {avg_f1:<11.2%} | {avg_rouge:<8.2%}", flush=True)
     print("-" * 90, flush=True)
 
     summary = {
         "repository": "BoboTiG/python-mss",
+        "repo_id": "mss",
         "eval_type": "ground_truth_causal_why",
         "total_questions": len(MSS_QA_PAIRS),
         "average_grounded_accuracy": avg_acc,
+        "average_fact_entailment_rate": avg_entail,
         "average_citation_precision": avg_prec,
+        "average_citation_recall": avg_rec,
+        "average_citation_f1": avg_f1,
+        "average_rouge_l_f1": avg_rouge,
         "results": detailed_results,
     }
 

@@ -4,6 +4,7 @@ from sqlmodel import SQLModel, Field, JSON, Column, select
 
 class Commit(SQLModel, table=True):
     sha: str = Field(primary_key=True)
+    repo_id: Optional[str] = Field(default=None, index=True)
     author_name: str
     author_email: str
     authored_date: datetime
@@ -20,6 +21,7 @@ class Commit(SQLModel, table=True):
 
 class PullRequest(SQLModel, table=True):
     number: int = Field(primary_key=True)
+    repo_id: Optional[str] = Field(default=None, index=True)
     title: str
     body: Optional[str] = None
     state: str                                  # open|closed|merged
@@ -35,6 +37,7 @@ class PullRequest(SQLModel, table=True):
 
 class Issue(SQLModel, table=True):
     number: int = Field(primary_key=True)
+    repo_id: Optional[str] = Field(default=None, index=True)
     title: str
     body: Optional[str] = None
     state: str
@@ -49,6 +52,7 @@ class Issue(SQLModel, table=True):
 
 class Chunk(SQLModel, table=True):
     id: str = Field(primary_key=True)            # deterministic uuid5
+    repo_id: Optional[str] = Field(default=None, index=True)
     source_type: str                              # "commit"|"pr"|"issue"|"thread_summary"
     source_id: str                                 # sha, or "pr#123", "issue#45"
     text: str
@@ -62,6 +66,7 @@ class Chunk(SQLModel, table=True):
 
 class SymbolIndex(SQLModel, table=True):
     symbol_id: str = Field(primary_key=True)      # e.g. "src/auth.py::AuthService::login"
+    repo_id: Optional[str] = Field(default=None, index=True)
     file_path: str
     symbol_name: str
     kind: str                                     # "class" | "function" | "method"

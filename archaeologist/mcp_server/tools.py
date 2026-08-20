@@ -351,10 +351,11 @@ def symbol_history_tool(symbol_query: str) -> List[Dict[str, Any]]:
                 })
     return matching_commits
 
-def ask_tool(question: str) -> str:
+def ask_tool(question: str, repo_id: Optional[str] = None) -> str:
     """Answers a causal 'why' question about the codebase using full agentic multi-hop retrieval."""
     inputs = {
         "question": question,
+        "repo_id": repo_id,
         "sub_questions": [],
         "current_sub_question_index": 0,
         "search_queries": [],

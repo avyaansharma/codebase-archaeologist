@@ -27,11 +27,18 @@ from archaeologist.retrieval.vector_store import VectorStore
 from archaeologist.retrieval.bm25_index import BM25Index
 
 class IngestionPipeline:
-    def __init__(self, repo_path: str, repo_url: Optional[str] = None, since_date: Optional[str] = None, github_limit: int = 500):
+    def __init__(self, repo_path: str, repo_url: Optional[str] = None, since_date: Optional[str] = None, github_limit: int = 500, repo_id: Optional[str] = None):
         self.repo_path = repo_path
         self.repo_url = repo_url
         self.since_date = since_date
         self.github_limit = github_limit
+        if repo_id:
+            self.repo_id = repo_id
+        elif repo_url:
+            parts = repo_url.rstrip("/").split("/")
+            self.repo_id = parts[-1].lower() if len(parts) >= 1 else os.path.basename(os.path.abspath(repo_path)).lower()
+        else:
+            self.repo_id = os.path.basename(os.path.abspath(repo_path)).lower()
 
     def run(self):
         print("Initializing metadata database...", file=sys.stderr)
@@ -89,6 +96,7 @@ class IngestionPipeline:
                                 if not sym_obj:
                                     sym_obj = SymbolIndex(
                                         symbol_id=sym["symbol_id"],
+                                        repo_id=self.repo_id,
                                         file_path=fpath,
                                         symbol_name=sym["name"],
                                         kind=sym["kind"],
@@ -115,6 +123,7 @@ class IngestionPipeline:
 
                 commit_obj = Commit(
                     sha=c_data["sha"],
+                    repo_id=self.repo_id,
                     author_name=c_data["author_name"],
                     author_email=c_data["author_email"],
                     authored_date=c_data["authored_date"],
@@ -200,6 +209,7 @@ class IngestionPipeline:
                         if not pr_obj:
                             pr_obj = PullRequest(
                                 number=pr_data["number"],
+                                repo_id=self.repo_id,
                                 title=pr_data["title"],
                                 body=pr_data["body"],
                                 state=pr_data["state"],
@@ -218,6 +228,7 @@ class IngestionPipeline:
                         if not issue_obj:
                             issue_obj = Issue(
                                 number=issue_data["number"],
+                                repo_id=self.repo_id,
                                 title=issue_data["title"],
                                 body=issue_data["body"],
                                 state=issue_data["state"],
@@ -276,7 +287,7 @@ class IngestionPipeline:
                     related.append(f"pr#{pr_by_commit[c.sha]}")
                 commit_dict["related_ids"] = related
 
-                commit_chunks = chunk_commit(commit=commit_dict, diff_summary=summary)
+                commit_chunks = chunk_commit(commit=commit_dict, diff_summary=summary, repo_id=self.repo_id)
                 if isinstance(commit_chunks, dict):
                     commit_chunks = [commit_chunks]
                 for chunk_info in commit_chunks:
@@ -286,7 +297,7 @@ class IngestionPipeline:
 
             for pr in all_prs:
                 pr_dict = pr.model_dump()
-                pr_chunks = chunk_pr(pr=pr_dict)
+                pr_chunks = chunk_pr(pr=pr_dict, repo_id=self.repo_id)
                 for chunk_info in pr_chunks:
                     c_obj = session.get(Chunk, chunk_info["id"])
                     if not c_obj:
@@ -295,13 +306,13 @@ class IngestionPipeline:
             all_issues = session.exec(select(Issue)).all()
             for i in all_issues:
                 issue_dict = i.model_dump()
-                issue_chunks = chunk_issue(issue=issue_dict)
+                issue_chunks = chunk_issue(issue=issue_dict, repo_id=self.repo_id)
                 for chunk_info in issue_chunks:
                     c_obj = session.get(Chunk, chunk_info["id"])
                     if not c_obj:
                         session.add(Chunk(**chunk_info))
 
-            code_chunks = chunk_codebase(self.repo_path)
+            code_chunks = chunk_codebase(self.repo_path, repo_id=self.repo_id)
             for chunk_info in code_chunks:
                 c_obj = session.get(Chunk, chunk_info["id"])
                 if not c_obj:
@@ -315,6 +326,7 @@ class IngestionPipeline:
             all_chunk_dicts = [
                 {
                     "id": c.id,
+                    "repo_id": c.repo_id,
                     "source_type": c.source_type,
                     "source_id": c.source_id,
                     "text": c.text,

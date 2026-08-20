@@ -54,6 +54,7 @@ def search_node(state: AgentState) -> dict:
     source_types = plan.get("source_types")
     date_from = plan.get("date_from")
     date_to = plan.get("date_to")
+    repo_id = state.get("repo_id") or plan.get("repo_id")
 
     bm25 = BM25Index()
     bm25_path = os.path.abspath(os.getenv("BM25_INDEX_PATH", "bm25_index.bin"))
@@ -79,7 +80,8 @@ def search_node(state: AgentState) -> dict:
                 query=query,
                 limit=30,
                 file_path=file_path,
-                source_types=source_types
+                source_types=source_types,
+                repo_id=repo_id
             )
             for hit in s_hits:
                 cid = hit["chunk"]["id"]

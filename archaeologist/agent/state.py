@@ -2,6 +2,7 @@ from typing import TypedDict, List, Dict, Any, Optional
 
 class AgentState(TypedDict):
     question: str
+    repo_id: Optional[str]
     sub_questions: List[str]
     current_sub_question_index: int
     search_queries: List[str]
