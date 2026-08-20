@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+os.environ["DATABASE_URL"] = os.getenv("FLASK_DATABASE_URL", "sqlite:///./eval/data/flask.db")
+os.environ["BM25_INDEX_PATH"] = os.getenv("FLASK_BM25_PATH", os.path.abspath("eval/data/flask_bm25.bin"))
+
 FLASK_QA_PAIRS = [
     {
         "id": 1,

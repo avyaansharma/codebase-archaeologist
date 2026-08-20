@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+os.environ["DATABASE_URL"] = os.getenv("MSS_DATABASE_URL", "sqlite:///./eval/data/mss.db")
+os.environ["BM25_INDEX_PATH"] = os.getenv("MSS_BM25_PATH", os.path.abspath("eval/data/mss_bm25.bin"))
+
 MSS_QA_PAIRS = [
     {
         "id": 1,
