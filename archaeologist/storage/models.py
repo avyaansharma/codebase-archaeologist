@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from sqlmodel import SQLModel, Field, JSON, Column
+from sqlmodel import SQLModel, Field, JSON, Column, select
 
 class Commit(SQLModel, table=True):
     sha: str = Field(primary_key=True)

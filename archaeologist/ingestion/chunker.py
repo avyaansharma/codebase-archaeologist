@@ -266,8 +266,56 @@ def chunk_pr(pr: dict) -> List[dict]:
     return chunks
 
 
+# Minimum token threshold for a method to get its own individual chunk during class decomposition.
+# Methods below this threshold are grouped into the class header chunk to avoid tiny-chunk spam.
+_MIN_METHOD_TOKENS = 20
+
+
+def _build_class_header(node: ast.ClassDef, lines: List[str], rel_path: str) -> str:
+    """Builds a class header string: class signature + docstring + attribute annotations.
+    
+    Does NOT include method bodies — those are decomposed into separate chunks.
+    """
+    # Start with the class definition line(s) and any decorators
+    header_parts = []
+    
+    # Class definition line
+    class_line = lines[node.lineno - 1]
+    header_parts.append(class_line)
+    
+    # Extract docstring if present
+    if (node.body and isinstance(node.body[0], ast.Expr) and 
+            isinstance(node.body[0].value, (ast.Constant, ast.Str))):
+        doc_node = node.body[0]
+        doc_end = getattr(doc_node, 'end_lineno', doc_node.lineno)
+        doc_lines = lines[doc_node.lineno - 1 : doc_end]
+        header_parts.extend(doc_lines)
+    
+    # Extract class-level attribute annotations and assignments (not methods)
+    for child in node.body:
+        if isinstance(child, (ast.AnnAssign, ast.Assign)):
+            child_end = getattr(child, 'end_lineno', child.lineno)
+            attr_lines = lines[child.lineno - 1 : child_end]
+            header_parts.extend(attr_lines)
+    
+    return "\n".join(header_parts)
+
+
 def chunk_codebase(repo_path: str) -> List[dict]:
-    """Walks the target codebase repository, parses AST symbols in current Python files, and creates baseline code chunks."""
+    """Walks the target codebase repository, parses AST symbols in current Python files,
+    and creates baseline code chunks.
+    
+    For classes exceeding 600 tokens, applies method-level decomposition:
+      1. A class header chunk (signature + docstring + __init__) with symbols_modified
+         containing the class name and all tiny method names grouped into it.
+      2. Individual per-method chunks for each method >= _MIN_METHOD_TOKENS, each with
+         symbols_modified = [ClassName, method_name].
+    
+    For classes fitting within 600 tokens, creates a single chunk with all method names
+    in symbols_modified (safe because the full code is physically present).
+    
+    For top-level functions, creates a single chunk per function (unchanged behavior).
+    """
     chunks = []
     for root, dirs, files in os.walk(repo_path):
         dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("venv", ".venv", "tests", "__pycache__", "build", "dist")]
@@ -291,29 +339,123 @@ def chunk_codebase(repo_path: str) -> List[dict]:
                 except Exception:
                     pass
 
-                lines = content.splitlines()
+                file_lines = content.splitlines()
                 if top_nodes:
                     for idx, node in enumerate(top_nodes):
                         end_ln = getattr(node, 'end_lineno', node.lineno + 60)
-                        node_lines = lines[node.lineno - 1 : end_ln]
+                        node_lines = file_lines[node.lineno - 1 : end_ln]
                         node_code = "\n".join(node_lines)
-                        if token_count(node_code) > 600:
-                            node_code = enc.decode(enc.encode(node_code)[:500])
+                        node_tokens = token_count(node_code)
+
+                        # --- ClassDef that exceeds 600 tokens: decompose into method-level chunks ---
+                        if isinstance(node, ast.ClassDef) and node_tokens > 600:
+                            inner_methods = [
+                                sub for sub in node.body
+                                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef))
+                            ]
+                            
+                            # 1. Build class header chunk (signature + docstring + attrs + tiny methods)
+                            header_text = _build_class_header(node, file_lines, rel_path)
+                            
+                            # Collect tiny methods to group into the header chunk
+                            tiny_method_names = []
+                            for m in inner_methods:
+                                m_end = getattr(m, 'end_lineno', m.lineno + 30)
+                                m_code = "\n".join(file_lines[m.lineno - 1 : m_end])
+                                m_toks = token_count(m_code)
+                                if m_toks < _MIN_METHOD_TOKENS:
+                                    tiny_method_names.append(m.name)
+                                    header_text += "\n" + m_code
+                            
+                            # Include __init__ in the header chunk (it provides class context)
+                            for m in inner_methods:
+                                if m.name == "__init__" and m.name not in tiny_method_names:
+                                    m_end = getattr(m, 'end_lineno', m.lineno + 30)
+                                    m_code = "\n".join(file_lines[m.lineno - 1 : m_end])
+                                    m_toks = token_count(m_code)
+                                    if m_toks <= 500:
+                                        header_text += "\n" + m_code
+                                    else:
+                                        header_text += "\n" + enc.decode(enc.encode(m_code)[:400])
+                                    break
+                            
+                            header_chunk_text = f"File: {rel_path}\nClass: {node.name}\n\n{header_text}".strip()
+                            if token_count(header_chunk_text) > 600:
+                                header_chunk_text = enc.decode(enc.encode(header_chunk_text)[:500])
+                            
+                            header_symbols = [node.name] + tiny_method_names
+                            header_id = make_deterministic_chunk_id("code", f"{rel_path}:{node.name}", idx, header_chunk_text)
+                            chunks.append({
+                                "id": header_id,
+                                "source_type": "code",
+                                "source_id": rel_path,
+                                "text": header_chunk_text,
+                                "timestamp": datetime.utcnow(),
+                                "file_paths": [rel_path],
+                                "symbols_modified": list(dict.fromkeys(header_symbols)),
+                                "is_reverted": False,
+                                "token_count": token_count(header_chunk_text),
+                                "related_ids": []
+                            })
+                            
+                            # 2. Create individual per-method chunks for substantial methods
+                            method_sub_idx = 0
+                            for m in inner_methods:
+                                if m.name in tiny_method_names or m.name == "__init__":
+                                    continue
+                                
+                                m_end = getattr(m, 'end_lineno', m.lineno + 30)
+                                m_code = "\n".join(file_lines[m.lineno - 1 : m_end])
+                                m_toks = token_count(m_code)
+                                
+                                if m_toks > 600:
+                                    m_code = enc.decode(enc.encode(m_code)[:500])
+                                
+                                method_chunk_text = f"File: {rel_path}\nClass: {node.name}\nMethod: {m.name}\n\n{m_code}".strip()
+                                method_sub_idx += 1
+                                method_id = make_deterministic_chunk_id(
+                                    "code", f"{rel_path}:{node.name}.{m.name}", method_sub_idx, method_chunk_text
+                                )
+                                chunks.append({
+                                    "id": method_id,
+                                    "source_type": "code",
+                                    "source_id": rel_path,
+                                    "text": method_chunk_text,
+                                    "timestamp": datetime.utcnow(),
+                                    "file_paths": [rel_path],
+                                    "symbols_modified": [node.name, m.name],
+                                    "is_reverted": False,
+                                    "token_count": token_count(method_chunk_text),
+                                    "related_ids": []
+                                })
                         
-                        chunk_text = f"File: {rel_path}\nSymbol: {node.name}\n\n{node_code}".strip()
-                        chunk_id = make_deterministic_chunk_id("code", f"{rel_path}:{node.name}", idx, chunk_text)
-                        chunks.append({
-                            "id": chunk_id,
-                            "source_type": "code",
-                            "source_id": rel_path,
-                            "text": chunk_text,
-                            "timestamp": datetime.utcnow(),
-                            "file_paths": [rel_path],
-                            "symbols_modified": [node.name],
-                            "is_reverted": False,
-                            "token_count": token_count(chunk_text),
-                            "related_ids": []
-                        })
+                        else:
+                            # --- Small class or top-level function: single chunk ---
+                            if node_tokens > 600:
+                                node_code = enc.decode(enc.encode(node_code)[:500])
+                            
+                            # For small classes, enrich symbols_modified with method names
+                            chunk_symbols = [node.name]
+                            if isinstance(node, ast.ClassDef):
+                                for sub in node.body:
+                                    if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                                        if sub.name not in chunk_symbols:
+                                            chunk_symbols.append(sub.name)
+                            
+                            chunk_text = f"File: {rel_path}\nSymbol: {node.name}\n\n{node_code}".strip()
+                            chunk_id = make_deterministic_chunk_id("code", f"{rel_path}:{node.name}", idx, chunk_text)
+                            chunks.append({
+                                "id": chunk_id,
+                                "source_type": "code",
+                                "source_id": rel_path,
+                                "text": chunk_text,
+                                "timestamp": datetime.utcnow(),
+                                "file_paths": [rel_path],
+                                "symbols_modified": list(dict.fromkeys(chunk_symbols)),
+                                "is_reverted": False,
+                                "token_count": token_count(chunk_text),
+                                "related_ids": []
+                            })
                 else:
                     symbols_found = []
                     chunk_text = f"File: {rel_path}\n\n{content[:1500]}".strip()
