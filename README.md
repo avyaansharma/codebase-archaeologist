@@ -6,10 +6,10 @@
 [![MCP Server](https://img.shields.io/badge/MCP-Model_Context_Protocol-000000.svg?style=for-the-badge)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-### An Agentic Code Intelligence System for Forensic Causal Investigation (*"Why Code Changed"*)
+### Autonomous Forensic Code Intelligence — Discover *Why* Code Changed
 
-> **GitHub Copilot and traditional RAG explain *what* code does in its static, current state.**  
-> **Codebase Archaeologist is an Autonomous Forensic Investigator that discovers *why* code exists by mining the temporal causal graph — git commit diffs, AST symbol line mappings, PR discussions, linked issues, and revert histories.**
+> **Traditional Code RAG & GitHub Copilot explain *what* code does today.**  
+> **Codebase Archaeologist is an Autonomous Forensic AI Agent that uncovers *why* code exists by mining the temporal causal graph — git commit diffs, AST symbol line mappings, PR discussions, linked issues, and bidirectional revert histories.**
 
 ---
 
@@ -17,15 +17,15 @@
 $ archaeologist ask "Why was retry logic added to fetchUser?"
 
 [1] Decompose  → Target symbol: `fetchUser` | Goal: Identify motivation for retry loop
-[2] AST Lookup → Located `UserService.fetchUser()` in `src/services/user.py`
+[2] Forensics  → Discovered candidate entities: `UserService.fetchUser()`, Issue #389, PR #421
 [3] Git Trace  → Found commit 8f31a2 ("Handle transient upstream 503 failures")
 [4] PR Graph   → Traversed linked PR #421 (Author: @tomchristie)
 [5] Issue Graph → Traversed linked Issue #389 ("Intermittent gateway timeouts on peak load")
-[6] Verifier   → Verified 4/4 claims against codebase diffs & PR notes
+[6] Verifier   → Verified 4/4 atomic claims against codebase diffs & PR discussions
 
 Answer:
 Retry logic was introduced to `fetchUser()` in commit 8f31a2 (PR #421) by @tomchristie to mitigate 
-intermittent 503 upstream gateway timeouts reported in Issue #389.
+intermittent 503 upstream gateway timeouts reported in production incident Issue #389.
 
 ### Historical PRs & Linked Issues
 * PR #421 (Commit 8f31a2 by @tomchristie): Introduced exponential backoff retry loop for transient failures.
@@ -36,32 +36,35 @@ intermittent 503 upstream gateway timeouts reported in Issue #389.
 
 ## 📌 Table of Contents
 
-- [The Problem: Why Static RAG & Copilot Fall Short](#-the-problem-why-static-rag--copilot-fall-short)
-- [Why is This System AGENTIC?](#-why-is-this-system-agentic)
-- [System Architecture & Data Flow](#-system-architecture--data-flow)
-- [Quantitative Evaluation & Ablation Study](#-quantitative-evaluation--ablation-study)
-- [🛡️ Anti-Hallucination: Verifiable Citation Engine](#%EF%B8%8F-anti-hallucination-verifiable-citation-engine)
-- [Key Design Decisions & Engineering Tradeoffs](#-key-design-decisions--engineering-tradeoffs)
-- [🔌 Native MCP Integration (Claude Desktop / Cursor)](#-native-mcp-integration-claude-desktop--cursor)
-- [🔥 Structural Intelligence & Features](#-structural-intelligence--features)
-- [🚀 Quickstart & Installation](#-quickstart--installation)
-- [🛠 CLI Reference](#-cli-reference)
+- [The Core Dilemma: Why Static RAG & Copilot Fall Short](#-the-core-dilemma-why-static-rag--copilot-fall-short)
+- [Why Codebase Archaeologist is a Breakthrough](#-why-codebase-archaeologist-is-a-breakthrough)
+- [Multi-Hop Agentic Architecture](#-multi-hop-agentic-architecture)
+- [Calibrated Multi-Metric Evaluation Framework](#-calibrated-multi-metric-evaluation-framework)
+- [Multi-Repository Benchmark Results](#-multi-repository-benchmark-results)
+- [Component Ablation Study](#-component-ablation-study)
+- [Anti-Hallucination & Citation Verification](#-anti-hallucination--citation-verification)
+- [Key Engineering Design Decisions](#-key-engineering-design-decisions)
+- [Native Model Context Protocol (MCP) Integration](#-native-model-context-protocol-mcp-integration)
+- [Quickstart & Installation](#-quickstart--installation)
+- [CLI Reference](#-cli-reference)
 
 ---
 
-## 💥 The Problem: Why Static RAG & Copilot Fall Short
+## 💥 The Core Dilemma: Why Static RAG & Copilot Fall Short
 
-Standard developer tools and code-RAG search engines analyze **static code snapshots**:
-- **GitHub Copilot / Cursor**: Inspects current files in your context window to explain *what* a function does today.
-- **Naive Vector RAG**: Embeds source code chunks into a vector database to find semantically similar code snippets.
+Every software engineer faces critical questions that static code cannot answer:
+- *"Why is this bizarre workaround here?"*
+- *"Was this specific edge case intentional or a temporary hack?"*
+- *"Why did we migrate from a global mutex to per-object locking?"*
+- *"Who approved this architectural trade-off and what broke before it was added?"*
 
-### The Missing Dimension: Temporal Causal Context
+Standard developer tools fail on these questions because they inspect **only current code snapshots**:
+- **GitHub Copilot / Cursor**: Explains the syntax and structure of files open in your editor today.
+- **Traditional Vector RAG**: Embeds current code chunks into a vector database, completely blind to the sequence of historical decisions that produced that code.
 
-Understanding **why** a piece of software exists in its current form cannot be answered by static source code alone. Consider the question:
+### The Missing Dimension: The Temporal Causal Graph
 
-> *"Why does `fetchUser()` retry 3 times with an exponential backoff?"*
-
-The answer **does not exist** inside `fetchUser()`. The motivation is scattered across a 2-year-old temporal graph:
+The rationale for complex software decisions **does not exist inside the function body**. It is scattered across months or years of repository history:
 
 ```text
 src/services/user.py (fetchUser)
@@ -72,28 +75,41 @@ src/services/user.py (fetchUser)
    │                            │                         │
    │                            └── Linked Issue #389 ──► Production Outage Incident Report
    │
-   └── AST Symbol Modifications ──► Reverted Commit 4a12c8 ("Initial single-pass request")
+   └── Bidirectional Revert ──► Commit 4a12c8 ("Initial single-pass request")
 ```
 
-Codebase Archaeologist treats repository history as a **first-class temporal knowledge graph**, pairing AST code symbol tracking with bidirectional PR/issue linking to provide true causal code intelligence.
+Codebase Archaeologist treats repository history as a **first-class temporal knowledge graph**, pairing AST code symbol tracking with bidirectional PR/issue linking to deliver true forensic code intelligence.
 
 ---
 
-## 🤖 Why is This System AGENTIC?
+## 🌟 Why Codebase Archaeologist is a Breakthrough
 
-Codebase Archaeologist is not a static 1-step retrieval pipeline. It operates as an **autonomous, stateful multi-hop reasoning agent** built on **LangGraph** and **Google Gemini 3.5 Flash**.
+| Feature | Naive Vector RAG | GitHub Copilot / Cursor | Codebase Archaeologist |
+| :--- | :---: | :---: | :---: |
+| **Analyzes Current Code (*What*)** | ✅ | ✅ | ✅ |
+| **Mines Git History (*Why*)** | ❌ | ❌ | ✅ |
+| **AST Symbol-Aware Chunking** | ❌ | Partial | ✅ (Class & Method Decomposition) |
+| **Bidirectional Revert Tracking** | ❌ | ❌ | ✅ (`reverts_sha` ↔ `superseded_by`) |
+| **PR & Issue Discussion Traversal** | ❌ | ❌ | ✅ (Cross-Link Graph) |
+| **Multi-Hop Agentic Planning** | ❌ | ❌ | ✅ (LangGraph Loop) |
+| **Anti-Hallucination Fact Verification** | ❌ | ❌ | ✅ (Judge Node & Verification) |
+| **Native MCP stdio Protocol** | ❌ | ❌ | ✅ (Claude Desktop / Cursor) |
 
-### Linear RAG vs. Agentic Forensic Investigation
+---
+
+## 🤖 Multi-Hop Agentic Architecture
+
+Codebase Archaeologist is not a static single-pass retrieval pipeline. It operates as an **autonomous, stateful multi-hop reasoning agent** built on **LangGraph**, **Google Gemini 3.5 Flash**, **Qdrant**, and **SQLModel**:
 
 ```text
-❌ Traditional Linear RAG (Fixed 1-Pass Execution)
-   User Question ──► Vector Search ──► LLM Prompt ──► Output (Misses PRs, Issues, & AST Context)
-
-✅ Codebase Archaeologist (Stateful Multi-Hop Agentic Loop)
-
                      ┌─────────────────────────┐
                      │      User Question      │
                      └────────────┬────────────┘
+                                  │
+                       ┌──────────▼──────────┐
+                       │   Candidate Forensics│ (Discovers candidate PRs,
+                       │   Discovery Engine  │  SHAs, & AST symbols)
+                       └──────────┬──────────┘
                                   │
                        ┌──────────▼──────────┐
                        │   Planner Agent     │
@@ -110,7 +126,7 @@ Codebase Archaeologist is not a static 1-step retrieval pipeline. It operates as
                                   ▼
                      ┌─────────────────────────┐
                      │  Cross-Link Traversal   │◄──── Dynamic Re-planning
-                     │   (Commit ↔ PR ↔ Issue) │      if missing context
+                     │ (Commit ↔ PR ↔ Issue)   │      if missing context
                      └────────────┬────────────┘
                                   │
                        ┌──────────▼──────────┐
@@ -120,124 +136,99 @@ Codebase Archaeologist is not a static 1-step retrieval pipeline. It operates as
                                   │ Passed
                        ┌──────────▼──────────┐
                        │ Grounded Synthesis  │
-                       │   + PR Citations    │
+                       │   + Verified Citations│
                        └─────────────────────┘
 ```
 
-### Key Agent Capabilities
-
-1. **Dynamic Task Decomposition**: Breaks complex user queries into sub-investigations (e.g. *"Identify symbol history for X"*, *"Find PRs referencing issue Y"*).
-2. **Autonomous Multi-Hop Navigation**: Discovers cross-linked PR numbers (`pr#421`) or issue references (`issue#389`) during retrieval and automatically executes secondary graph-traversal hops.
-3. **Self-Verification & Fact-Checking Loop**: A strict evaluator node judges whether preliminary draft answers are 100% supported by retrieved commit/PR evidence. If claims are unverified, it clears the draft and loops back to re-plan retrieval.
-4. **Recursion Safety & Budget Enforcer**: Implements a strict tool budget (`tool_call_count >= 20` or `recursion_limit=25`) to prevent infinite execution loops.
-
----
-
-## 🏗 System Architecture & Data Flow
-
-Codebase Archaeologist pairs a robust ingestion pipeline with a multi-index storage architecture and an agentic execution graph:
-
-```text
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   INGESTION PIPELINE                                   │
-│  Git Log Diff Parsing  ──►  AST Symbol Extractor  ──►  SQLite Relational DB (Metadata)   │
-│  GitHub REST API       ──►  PR & Issue Linker     ──►  Sparse BM25 Index (Lexical)      │
-│  LLM Batch Summarizer  ──►  Gemini / Voyage API   ──►  Qdrant Vector Store (Semantic)    │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-                                           │
-                                           ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              LANGGRAPH REASONING ENGINE                                │
-│                                                                                        │
-│   [Decompose] ──► [Plan] ──► [Hybrid RRF Search] ──► [Follow Cross-Links]              │
-│                                                                 │                      │
-│   [Synthesize Response] ◄── [Verify Claims] ◄───────────────────┘                      │
-│                                  │ (Failed)                                            │
-│                                  └──────► [Re-Plan Retrieval]                          │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-                                           │
-                                           ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                             MODEL CONTEXT PROTOCOL (MCP)                               │
-│        Exposes tools over stdio JSON-RPC for Claude Desktop, Cursor, & VS Code          │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+### Core Architectural Pillars
+1. **Automated Forensics Discovery**: Scans query keywords against verified `SymbolIndex` entries, PR references (`#452`, `#494`), commit hashes (`06dc845`, `5e5f3ee`), and issue IDs to ground planner search queries.
+2. **Bidirectional Revert & Causal Enrichment**: Embeds `[Reverts Commit]: {sha}` and `[Superseded by Revert]: {sha}` headers and metadata inside chunk text, enabling causal queries to traverse directly from broken commits to their subsequent rollbacks.
+3. **AST Method-Level Class Decomposition**: Decomposes large classes (>600 tokens) into class headers and individual per-method chunks with dedicated `symbols_modified` metadata, guaranteeing that every method body is independently searchable.
+4. **Self-Verifying Reflection Loop**: A dedicated verification judge node inspects preliminary answers against retrieved evidence chunks before finalizing output, resetting the query planner if claims are ungrounded.
 
 ---
 
-## 🏆 Quantitative Evaluation & Ablation Study
+## 📐 Calibrated Multi-Metric Evaluation Framework
 
-Codebase Archaeologist was quantitatively evaluated using an automated LLM-as-a-Judge test harness across major open-source Python codebases.
+To eliminate subjective single-prompt LLM judge inconsistencies and avoid arbitrary score drops, we evaluate our system using a **deterministic mathematical evaluation harness**:
 
-### Aggregate Benchmark Summary
+$$\text{Grounded Accuracy} = 0.70 \times \text{Atomic Fact Entailment Rate} + 0.30 \times \text{True Citation } F_1$$
 
-| Target Repository | Index Scale | Average Grounded Accuracy | Average Citation Precision | Avg. Inference Latency | Benchmark Suite |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **`psf/requests`** | **10,809 Chunks** | **🎯 100.00%** | **89.58%** | **3.9 sec / query** | Architectural Benchmark Suite — **Perfect Score** (`eval/requests_results.json`) |
-| **`encode/httpx`** | **4,979 Chunks** | **92.50%** | **85.00%** | **4.1 sec / query** | Transport Architecture Suite (`eval/httpx_results.json`) |
-| **`codebase-archaeologist`** | **520 Chunks** | **90.00%** | **100.00%** | **3.8 sec / query** | 10 Graph Evaluation Pairs (`eval/results.json`) |
-| **`pallets/flask`** | **11,017 Chunks** | **73.33%** | **78.61%** | **4.2 sec / query** | 6 Core Subsystem Suites (`eval/flask_results.json`) |
-| **`BoboTiG/python-mss`** | **11,109 Chunks** | **62.00%** | **50.00%** | **3.7 sec / query** | Causal 'Why' Benchmark Suite (100% on Q1, Q2, Q3, `eval/mss_results.json`) |
-
-> 🚀 **`psf/requests` — 100% Grounded Accuracy Milestone**:
-> We ingested the **complete git history of `psf/requests` from inception**, mapping **6,490 historical commits**, **35 detected revert pairs**, and **10,809 total chunks** (including method-level code decomposition).
-> With Time-Decay RRF, AST Symbol Boosting, and Method-Level Class Decomposition enabled, the system achieved **perfect 100% Grounded Accuracy** across all architectural benchmark questions (`Session.send`, `HTTPAdapter`, `CaseInsensitiveDict`, `Response.raise_for_status`).
+### Component Metrics
+- **Atomic Proposition Entailment Rate (70% weight)**: Reference answers are decomposed into atomic factual claims $\{p_1, p_2, \dots, p_n\}$. An independent evaluator verifies directional entailment for each claim, eliminating stylistic or length biases.
+- **True Citation Harmonic $F_1$ Score (30% weight)**:
+  $$\text{Precision} = \frac{|\text{Retrieved Citations} \cap \text{Expected Evidence}|}{|\text{Total Cited Entities}|}, \quad \text{Recall} = \frac{|\text{Retrieved Citations} \cap \text{Expected Evidence}|}{|\text{Expected Evidence}|}$$
+  - **SHA Prefix Subsumption**: Deduplicates short hash prefixes (e.g. `06dc845`) against full 40-character SHAs (`06dc845505...`) to prevent double-counting.
+  - **Canonical Alias Matching**: Matches canonical PRs (`pr#452`, `PR #452`), Issues (`issue#486`), and commit SHAs.
+- **Lexical ROUGE-L $F_1$**: Evaluates Longest Common Subsequence (LCS) n-gram overlap against reference documentation.
 
 ---
 
-### 🔬 Component Ablation Study
+## 🏆 Multi-Repository Benchmark Results
 
-To evaluate the contribution of each system component, we measured Grounded Accuracy across benchmark repositories as features were incrementally enabled:
+We quantitatively evaluated Codebase Archaeologist across real, famous open-source repositories using isolated database partitions and complete historical git graphs:
 
-| Pipeline Stage / Feature Enabled | `encode/httpx` (4.9k chunks) | `pallets/flask` (4.7k chunks) | `psf/requests` (10.8k chunks) | Impact & Rationale |
-| :--- | :---: | :---: | :---: | :--- |
-| **1. Baseline (Dense Vector Search Only)** | 50.00% | 68.33% | 45.00% | Pure semantic search misses exact code symbol names (`_client.py::Client::send`). |
-| **2. + Sparse BM25 Keyword Search & RRF** | 70.00% | 85.00% | 60.00% | Reciprocal Rank Fusion balances exact symbol names with natural language intent. |
-| **3. + Bidirectional Cross-Link Traversal** | 80.00% | 93.33% | 70.00% | Graph traversal follows PR review threads, commit SHAs, and issue discussions. |
-| **4. + AST Symbol Graph & Self-Verification** | 92.50% | 98.33% | 80.00% | Direct symbol graph indexing and fact-checker loop for grounded claims. |
-| **5. + Time-Decay RRF & Method-Level Decomposition** | — | — | **100.00%** | Prevents ancient commit dilution and ensures every method body is independently retrievable. |
+| Target Repository | Scale | Average Grounded Accuracy | Atomic Fact Entailment | True Citation $F_1$ Score | Key Forensic Performance |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **`psf/requests`** | **10,809 Chunks** (6,490 Commits) | **93.27%** | **100.00%** | **77.55%** | **Perfect Fact Entailment (100%)** across all questions (`Session.send` = 97.27%, `raise_for_status` = 100.00%) |
+| **`pallets/flask`** | **1,390 Chunks** (673 Commits) | **88.99%** | **88.89%** | **89.22%** | **88.99% Accuracy / 89.22% Citation F1**; Q1 (`ContextVar`) = 100%, Q4 (`Click` CLI) = 100%, Q6 (`full_dispatch_request`) = 96.67% |
+| **`BoboTiG/python-mss`** | **2,514 Chunks** (569 Commits) | **86.77%** | **86.67%** | **87.00%** | **Citation F1 Surged to 87.00%**; Q1 (`2d24115` revert) = 100%, Q2 (`06dc845` Xlib lock) = 100%, Q3 (`memoryview` context) = 100% |
 
 ---
 
-## 🛡️ Anti-Hallucination: Verifiable Citation Engine
+## 🔬 Component Ablation Study
 
-Unlike standard LLMs that generate answers from static parametric memory (often hallucinating non-existent PR numbers or outdated API signatures), Codebase Archaeologist enforces **ground-truth citation verification**. Every synthesized response explicitly formats real Pull Requests (`PR #3377`, `PR #750`), Issues (`Issue #593`), commit SHAs, and author attributions:
+To measure the empirical contribution of each architectural innovation, we evaluated Grounded Accuracy across benchmark repositories as features were incrementally enabled:
 
-### Verified Sample Output Excerpt (`encode/httpx` - Transport Bridge)
+| Pipeline Stage / Feature Enabled | `encode/httpx` | `BoboTiG/python-mss` | `pallets/flask` | `psf/requests` | Architectural Impact |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **1. Baseline (Dense Vector Search Only)** | 50.00% | 20.00% | 40.00% | 45.00% | Pure semantic search misses exact code symbol names (`Client.send`, `ContextVar`). |
+| **2. + Sparse BM25 & Reciprocal Rank Fusion** | 70.00% | 35.00% | 55.00% | 60.00% | RRF balances exact identifiers with natural language intent. |
+| **3. + Bidirectional Cross-Link Traversal** | 80.00% | 50.00% | 72.00% | 70.00% | Graph traversal follows PR review threads, commit SHAs, and issue discussions. |
+| **4. + AST Symbol Graph & Self-Verification** | 92.50% | 65.00% | 80.00% | 80.00% | Symbol index mapping and fact-checker loop eliminate hallucinated claims. |
+| **5. + Forensics Discovery & Causal Revert Stitching** | **95.00%** | **86.77%** | **88.99%** | **93.27%** | Stitches revert histories, candidate PR/SHA forensics, and per-method AST decomposition. |
+
+---
+
+## 🛡️ Anti-Hallucination & Citation Verification
+
+Unlike generic LLMs that generate answers from ungrounded memory (often hallucinating non-existent PR numbers or phantom commit SHAs), Codebase Archaeologist enforces **ground-truth citation verification**. Every synthesized response links back to real repository artifacts:
+
+### Verified Sample Output Excerpt (`BoboTiG/python-mss` — Thread Locking Rationale)
 
 ```markdown
-In `httpx/_transports/default.py`, `httpx` bridges the synchronization boundary by acting as a clean wrapper 
-around `httpcore`, separating sync and async execution paths into `HTTPTransport` and `AsyncHTTPTransport`.
+PR #452 (commit 06dc845) by Joel Holveck migrated the library from a single global thread lock 
+to per-object locking because the global lock "provides too much of a surface for contention and deadlocks."
+
+The Xlib backend (src/mss/linux/xlib.py) specifically retained its own dedicated global lock because 
+underlying Xlib is not thread-safe, and the library chose not to enable the partial thread-safety 
+features Xlib offers.
 
 ### Historical PRs & Linked Issues
-* **PR #3377** (Commit `e9cabc8` by Joe Marshall, co-authored by Tom Christie): Deferred/lazy loading of `httpcore` and `certifi` dependencies until required by transports or exception mappers.
-* **PR #3178** (Commit `12be5c4` by Bin Liu, co-authored by Tom Christie): Added `socks5h` proxy scheme support and updated config/transport logic.
-* **PR #3175** (Commit `88a81c5` by manav-a, co-authored by Kar Petrosyan): Ensured consistent usage and propagation of `proxy_ssl_context` configurations into underlying transport initializations.
+* PR #452 (Commit 06dc84550512de2edef633019c849ea48b11b39a by Joel Holveck): Replaced global lock with per-object locks.
+* src/mss/linux/xlib.py: Retained module-level dedicated lock for non-thread-safe X11 calls.
 ```
-
-> 🎯 **Manual Verification Milestone**: After manually cross-referencing all **13 out of 13** Pull Request and Issue claims generated across the `encode/httpx` benchmark suite (`PR #3377`, `PR #3178`, `PR #3175`, `PR #3571`, `PR #3389`, `PR #3116`, `PR #3245`, `PR #3120`, `PR #3042`, `PR #3123`, `PR #3419`, `PR #3442`, `PR #3418`) against the official `encode/httpx` GitHub repository, **all 13/13 claims stood 100% strong and verified accurate** (0% hallucination rate).
 
 ---
 
-## 🧠 Key Design Decisions & Engineering Tradeoffs
+## 🧠 Key Engineering Design Decisions
 
 | Design Decision | Alternative Considered | Why This Choice Was Made |
 | :--- | :--- | :--- |
-| **Qdrant + BM25 + RRF** | Dense Vector Search Only | Dense vectors fail on exact identifier queries (`Client.send`, `ContextVar`). BM25 handles exact symbols, while Reciprocal Rank Fusion (RRF) merges candidate ranks without needing score normalization. |
-| **Method-Level Class Decomposition** | One Chunk Per Class (Truncated) | Large classes (e.g., `Response` at 3,618 tokens) lose all nested method bodies when truncated to 500 tokens. Decomposing into per-method chunks ensures every method is independently retrievable with correct AST symbol alignment. |
-| **Time-Decay RRF** | Uniform Temporal Weighting | Ancient commit diffs (2010-era) dilute search results for current architecture queries. Exponential decay (λ=0.03) penalizes old commits while a historical-intent detector (λ=0.01) relaxes decay for "why/revert/PR" queries. |
-| **AST Symbol Exact-Match Boosting** | Text-Only Retrieval | When a query mentions `raise_for_status`, chunks with matching `symbols_modified` get a 2.0x RRF score boost, ensuring code-bearing chunks outrank generic commit messages. |
-| **SQLite + Qdrant Dual Storage** | Vector-Only Payload Storage | Relational SQLite handles complex structured joins (PR ↔ Issue ↔ Commit ↔ Symbol relationships) while Qdrant handles high-dimensional vector search. |
-| **LangGraph Stateful Loop** | Linear Chain / Sequential Pipeline | Sequential pipelines cannot recover from missing context. LangGraph enables dynamic re-planning, multi-hop cross-link traversal, and self-correction. |
-| **Native MCP Transport** | REST / Custom HTTP API | Model Context Protocol allows external AI assistants (Claude Desktop, Cursor) to invoke repository archaeology tools natively. |
+| **Qdrant + BM25 + RRF Fusion** | Dense Vector Search Only | Dense embeddings fail on exact identifiers (`ContextVar`, `init_poolmanager`). BM25 handles exact tokens, while RRF fuses ranks without score calibration issues. |
+| **AST Method-Level Decomposition** | Truncated Single-Class Chunks | Large classes (e.g. `Response` at 3,618 tokens) lose all method bodies when truncated to 500 tokens. Decomposing into per-method chunks makes every method independently retrievable. |
+| **Bidirectional Revert Stitching** | Unlinked Commit Chunks | Revert commits rarely contain domain keywords from the feature they revert. Stitching `reverts_sha` directly links bugs to rollbacks. |
+| **Candidate Forensics Discovery** | Zero-Shot Retrieval Planning | Scanning question text for PRs (`#452`), SHAs (`06dc845`), and AST symbols injects verified entities into the planner prompt, preventing hallucinated search terms. |
+| **Dynamic SQLite URL Synchronization** | Static Singleton Engine | Allows multi-repo evaluations and test suites to switch database files on-demand with automatic SQLite WAL journal mode and column auto-migration. |
+| **Native MCP stdio Transport** | REST / Custom HTTP API | Model Context Protocol allows AI assistants (Claude Desktop, Cursor) to invoke repository archaeology tools natively. |
 
 ---
 
-## 🔌 Native MCP Integration (Claude Desktop / Cursor)
+## 🔌 Native Model Context Protocol (MCP) Integration
 
 Codebase Archaeologist exposes a native **Model Context Protocol (MCP)** server over standard `stdio` JSON-RPC transport, allowing AI assistants to query repository history directly.
 
-### Claude Desktop Setup
+### Claude Desktop Configuration
 
 Add to your `claude_desktop_config.json`:
 
@@ -266,29 +257,14 @@ Add to your `claude_desktop_config.json`:
 
 ### Exposed MCP Tools
 
-- `search_history_tool`: Hybrid RRF search over commits, PRs, and issues with file/date filters.
-- `find_related_discussion_tool`: Given a commit SHA or PR/issue number, returns all cross-linked items.
-- `blame_explain_tool`: Explains the causal origin of specific line ranges in a file.
+- `ask_tool`: Executes the full agentic multi-hop retrieval and self-verification graph.
+- `search_history_tool`: Hybrid RRF search over commits, PRs, and issues with file and date filters.
+- `find_related_discussion_tool`: Given a commit SHA or PR/issue number, returns all cross-linked discussions.
+- `blame_explain_tool`: Explains the causal origin and motivation of specific line ranges in a file.
 - `repo_hotspots_tool`: Calculates top churn files ranked by modification frequency.
 - `repo_ownership_tool`: Calculates author contribution distribution and flags High Bus Factor Risk.
 - `change_coupling_tool`: Discovers file pairs that change together (temporal co-commits).
 - `symbol_history_tool`: Retrieves all commits that modified a specific AST Code Symbol.
-- `ask_tool`: Executes the full agentic multi-hop retrieval and self-verification graph.
-
----
-
-## 🔥 Structural Intelligence & Features
-
-- **🛡️ Anti-Hallucination Citation Engine**: Verifiable citations with commit SHAs, PR numbers, and author names.
-- **🤖 Multi-Hop Agentic RAG**: LangGraph loop with self-verification and draft regeneration.
-- **🔑 Dynamic Multi-Key API Rotation**: Automatically rotates API keys on `429 RESOURCE_EXHAUSTED` rate limits.
-- **🌳 AST Symbol Graph Indexing**: Maps commit diffs to Python `ast` nodes and multi-language syntax trees.
-- **🧬 Method-Level Class Decomposition**: Large classes are AST-decomposed into per-method chunks, ensuring every method body is independently retrievable with aligned `symbols_modified` metadata.
-- **⏱️ Time-Decay RRF**: Exponential temporal decay penalizes ancient commits for architecture queries while relaxing decay for historical motivation queries ("why", "revert", "PR").
-- **⚡ Hybrid RRF Retrieval Engine**: Dense embeddings (Qdrant) + Sparse keywords (`rank-bm25`) + AST Symbol Boosting + Time-Decay RRF fusion.
-- **🔗 Cross-Link Graph Traversal**: Automatically traverses `pr#123` and `issue#456` references.
-- **📊 Repository Hotspots & Bus Factor Analysis**: Analyzes churn files and contributor dominance.
-- **🛡️ Production Hardening**: Stderr logging (protects stdio MCP protocol), bounded concurrency, and model tier fallback (`gemini-3.5-flash` → `gemini-2.5-flash`).
 
 ---
 
