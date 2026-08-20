@@ -105,11 +105,23 @@ def symbol_history(
 
 
 @app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", help="Host address to bind"),
+    port: int = typer.Option(8000, help="Port to bind the web server to"),
+    reload: bool = typer.Option(False, help="Enable auto-reload for development")
+):
+    """Starts the Codebase Archaeologist Interactive Web UI & API Server."""
+    import uvicorn
+    typer.echo(f"🏺 Starting Codebase Archaeologist Web Server at http://{host}:{port}...")
+    uvicorn.run("archaeologist.web.server:app", host=host, port=port, reload=reload)
+
+@app.command()
 def start_server():
     """Starts the Codebase Archaeologist MCP Server on stdio transport."""
     from archaeologist.mcp_server.server import mcp
     typer.echo("Starting stdio MCP server...", err=True)
     mcp.run()
+
 
 @app.command()
 def run_eval(

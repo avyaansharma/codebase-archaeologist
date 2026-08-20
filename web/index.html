@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Codebase Archaeologist — Autonomous Forensic Code Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="index.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <!-- Ambient background glow effects -->
+  <div class="glow-orb glow-top-left"></div>
+  <div class="glow-orb glow-bottom-right"></div>
+
+  <div class="app-container">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="logo-icon">🏺</div>
+        <div>
+          <h1 class="logo-title">Codebase Archaeologist</h1>
+          <p class="logo-subtitle">Autonomous Forensic Code Intelligence & Temporal Causal Graph</p>
+        </div>
+      </div>
+
+      <!-- Repository Switcher Pills -->
+      <div class="repo-selector-container" id="repo-selector">
+        <!-- Dynamically populated repo pills -->
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="nav-tabs">
+        <button class="nav-tab active" id="tab-btn-studio" onclick="switchTab('studio')">
+          <span class="tab-icon">💬</span> Query Studio
+        </button>
+        <button class="nav-tab" id="tab-btn-analytics" onclick="switchTab('analytics')">
+          <span class="tab-icon">📊</span> Repository Intelligence
+        </button>
+        <button class="nav-tab" id="tab-btn-benchmarks" onclick="switchTab('benchmarks')">
+          <span class="tab-icon">🏆</span> Leaderboard
+        </button>
+      </nav>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- TAB 1: Query Studio -->
+      <section id="view-studio" class="tab-view active">
+        <!-- Selected Repository Banner -->
+        <div class="repo-banner" id="repo-banner">
+          <div class="repo-info">
+            <span class="repo-badge" id="banner-badge">Python</span>
+            <h2 class="repo-name" id="banner-title">psf/requests</h2>
+            <p class="repo-desc" id="banner-desc">Loading repository history...</p>
+          </div>
+          <div class="repo-metrics-strip">
+            <div class="metric-pill">
+              <span class="metric-label">Commits</span>
+              <span class="metric-val" id="banner-commits">-</span>
+            </div>
+            <div class="metric-pill">
+              <span class="metric-label">Indexed Chunks</span>
+              <span class="metric-val" id="banner-chunks">-</span>
+            </div>
+            <div class="metric-pill">
+              <span class="metric-label">Grounded Accuracy</span>
+              <span class="metric-val text-success" id="banner-acc">93.27%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Curated Starter Questions Section -->
+        <div class="starter-section">
+          <h3 class="section-title">✨ Recommended Forensic Investigations</h3>
+          <div class="starter-cards-grid" id="starter-cards">
+            <!-- Dynamically populated starter question cards -->
+          </div>
+        </div>
+
+        <!-- Query Input Console -->
+        <div class="query-console">
+          <div class="input-wrapper">
+            <span class="input-icon">🔍</span>
+            <input 
+              type="text" 
+              id="query-input" 
+              class="query-input" 
+              placeholder="Ask a causal question (e.g. 'Why was commit 5e5f3ee reverted?' or 'Why was retry logic added to fetchUser?')..." 
+              autocomplete="off"
+            />
+            <button id="submit-btn" class="btn-primary" onclick="submitQuery()">
+              <span>Investigate</span>
+              <span class="btn-arrow">→</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Execution State Accordion -->
+        <div id="execution-timeline" class="execution-timeline hidden">
+          <div class="timeline-header">
+            <div class="pulse-indicator"></div>
+            <span class="timeline-title" id="timeline-status-text">Autonomous Agent Orchestration in Progress...</span>
+          </div>
+          <div class="timeline-steps" id="timeline-steps">
+            <!-- Dynamically populated live steps -->
+          </div>
+        </div>
+
+        <!-- Response Display Card -->
+        <div id="response-container" class="response-container hidden">
+          <div class="response-card">
+            <div class="response-header">
+              <div class="response-badge-group">
+                <span class="badge badge-verified">🛡️ 100% Causal Claims Verified</span>
+                <span class="badge badge-repo" id="resp-repo-badge">psf/requests</span>
+              </div>
+              <button class="btn-secondary" onclick="copyResponseText()">📋 Copy Answer</button>
+            </div>
+            <div class="markdown-body" id="response-body">
+              <!-- Rendered Markdown Output -->
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- TAB 2: Repository Analytics -->
+      <section id="view-analytics" class="tab-view">
+        <div class="analytics-grid">
+          <!-- Hotspots Card -->
+          <div class="analytics-card">
+            <div class="card-header">
+              <h3 class="card-title">🔥 Churn Hotspot Files</h3>
+              <span class="card-hint">Ranked by modification frequency</span>
+            </div>
+            <div class="hotspots-list" id="hotspots-container">
+              <div class="loading-spinner">Loading churn metrics...</div>
+            </div>
+          </div>
+
+          <!-- Bus Factor & Ownership Card -->
+          <div class="analytics-card">
+            <div class="card-header">
+              <h3 class="card-title">👥 Contributor Ownership</h3>
+              <span class="bus-factor-badge" id="bus-factor-badge">Evaluating Risk...</span>
+            </div>
+            <div class="ownership-list" id="ownership-container">
+              <div class="loading-spinner">Loading contributor data...</div>
+            </div>
+          </div>
+
+          <!-- Temporal Coupling Card -->
+          <div class="analytics-card full-width">
+            <div class="card-header">
+              <h3 class="card-title">🔗 Temporal Change Coupling</h3>
+              <span class="card-hint">File pairs that frequently co-commit together</span>
+            </div>
+            <div class="coupling-grid" id="coupling-container">
+              <div class="loading-spinner">Analyzing co-commit dependencies...</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: Leaderboard & Evaluation -->
+      <section id="view-benchmarks" class="tab-view">
+        <div class="leaderboard-container">
+          <div class="leaderboard-header">
+            <h2>🏆 Multi-Repository Evaluation Leaderboard</h2>
+            <p>Deterministic evaluation measuring Atomic Fact Entailment Rate (70%) and True Citation Harmonic F1 (30%).</p>
+          </div>
+
+          <div class="scorecards-row">
+            <div class="scorecard">
+              <span class="score-title">psf/requests</span>
+              <span class="score-num text-success">93.27%</span>
+              <span class="score-sub">100.0% Fact Entailment</span>
+            </div>
+            <div class="scorecard">
+              <span class="score-title">pallets/flask</span>
+              <span class="score-num text-success">88.99%</span>
+              <span class="score-sub">89.22% Citation F1</span>
+            </div>
+            <div class="scorecard">
+              <span class="score-title">BoboTiG/python-mss</span>
+              <span class="score-num text-success">86.77%</span>
+              <span class="score-sub">87.00% Citation F1</span>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="benchmark-table">
+              <thead>
+                <tr>
+                  <th>Target Repository</th>
+                  <th>Total Commits</th>
+                  <th>Indexed Chunks</th>
+                  <th>Grounded Accuracy</th>
+                  <th>Fact Entailment</th>
+                  <th>Citation F1</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboard-table-body">
+                <!-- Dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <span>Codebase Archaeologist • Autonomous Forensic RAG powered by Google Gemini 3.5 & LangGraph</span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
