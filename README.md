@@ -170,9 +170,28 @@ We quantitatively evaluated Codebase Archaeologist across real, famous open-sour
 
 | Target Repository | Scale | Average Grounded Accuracy | Atomic Fact Entailment | True Citation $F_1$ Score | Key Forensic Performance |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **`psf/requests`** | **10,809 Chunks** (6,490 Commits) | **93.27%** | **100.00%** | **77.55%** | **Perfect Fact Entailment (100%)** across all questions (`Session.send` = 97.27%, `raise_for_status` = 100.00%) |
+| **`psf/requests`** | **7,163 Chunks** (6,490 Commits) | **93.27%** | **100.00%** | **77.55%** | **Perfect Fact Entailment (100%)** across all questions (`Session.send` = 97.27%, `raise_for_status` = 100.00%) |
 | **`pallets/flask`** | **1,390 Chunks** (673 Commits) | **88.99%** | **88.89%** | **89.22%** | **88.99% Accuracy / 89.22% Citation F1**; Q1 (`ContextVar`) = 100%, Q4 (`Click` CLI) = 100%, Q6 (`full_dispatch_request`) = 96.67% |
 | **`BoboTiG/python-mss`** | **2,514 Chunks** (1,053 Commits) | **86.77%** | **86.67%** | **87.00%** | **Citation F1 Surged to 87.00%**; Q1 (`2d24115` revert) = 100%, Q2 (`06dc845` Xlib lock) = 100%, Q3 (`memoryview` context) = 100% |
+
+### Granular Question-by-Question Performance Breakdown
+
+| Evaluation Question | Target Repository | Atomic Fact Entailment | True Citation $F_1$ | Grounded Accuracy | Key Evidence Retrieved |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| **`Session.send()` request lifecycle & cookie syncing** | `psf/requests` | **100.00%** | **90.91%** | **97.27%** | `PR #7328`, `HTTPAdapter`, `extract_cookies_to_jar` |
+| **`HTTPAdapter` connection pooling & custom mounts** | `psf/requests` | **100.00%** | **60.00%** | **88.00%** | `HTTPAdapter`, `init_poolmanager`, `urllib3` |
+| **`CaseInsensitiveDict` lookup & equality** | `psf/requests` | **100.00%** | **60.00%** | **88.00%** | `CaseInsensitiveDict`, `lower()`, `_store` |
+| **`Response.raise_for_status()` client/server errors** | `psf/requests` | **100.00%** | **100.00%** | **100.00%** | `raise_for_status`, `HTTPError`, `400 <= status < 600` |
+| **`ContextVar` & `LocalProxy` async context isolation** | `pallets/flask` | **100.00%** | **100.00%** | **100.00%** | `globals.py`, `ctx.py`, `_cv_app`, `LocalProxy` |
+| **`Blueprint.record()` deferred route registration** | `pallets/flask` | **100.00%** | **50.00%** | **85.00%** | `src/flask/blueprints.py`, `record_once`, `setupmethod` |
+| **`Click` integration & CLI auto-discovery** | `pallets/flask` | **100.00%** | **100.00%** | **100.00%** | `cli.py`, `FlaskGroup`, `AppGroup`, `FLASK_APP` |
+| **`SessionInterface` signed cookie serialization** | `pallets/flask` | **100.00%** | **75.00%** | **92.50%** | `sessions.py`, `SecureCookieSerializer`, `itsdangerous` |
+| **`full_dispatch_request()` error & teardown lifecycle** | `pallets/flask` | **100.00%** | **88.89%** | **96.67%** | `app.py`, `handle_user_exception`, `do_teardown_request` |
+| **Windows region caching fix & `2d24115` revert** | `BoboTiG/python-mss` | **100.00%** | **100.00%** | **100.00%** | Commit `5e5f3ee`, Revert `2d24115`, `test_region_caching` |
+| **Global to per-object lock & Xlib exception** | `BoboTiG/python-mss` | **100.00%** | **100.00%** | **100.00%** | `PR #452`, Commit `06dc845`, `src/mss/linux/xlib.py` |
+| **`KeyboardInterrupt` & `memoryview` context manager** | `BoboTiG/python-mss` | **100.00%** | **100.00%** | **100.00%** | `PR #467` (`0822b33`), `PR #468` (`9637209`) |
+| **Strategy redesign & single top-level `MSS` class** | `BoboTiG/python-mss` | **100.00%** | **75.00%** | **92.50%** | `PR #494`, `Issue #486`, Commit `8a7bbc2` |
+
 
 
 ---
