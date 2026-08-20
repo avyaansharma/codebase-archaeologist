@@ -35,8 +35,14 @@ def init_db(db_url: Optional[str] = None):
             with engine.connect() as conn:
                 conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
                 conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
+                for table in ["commit", "pullrequest", "issue", "chunk", "symbolindex"]:
+                    try:
+                        conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN repo_id VARCHAR;")
+                    except Exception:
+                        pass
+                conn.commit()
         except Exception as e:
-            print(f"Notice: Could not set SQLite PRAGMA WAL mode: {e}", file=sys.stderr)
+            print(f"Notice: Could not set SQLite PRAGMA WAL mode or migrate columns: {e}", file=sys.stderr)
 
 
 def get_session() -> Session:
