@@ -11,6 +11,8 @@ venv/
 *.db-shm
 *.db-wal
 *.bin
+!eval/data/*.db
+!eval/data/*.bin
 qdrant_db/
 qdrant_storage/
 qdrant_storage_local/
@@ -25,6 +27,8 @@ qdrant_storage_local/
 # Context & Documentation
 context.md
 bugs.md
+scratch/
+*.egg-info/
 
 
 
