@@ -1,3 +1,4 @@
+gradio>=4.44.0
 fastapi>=0.115.0
 uvicorn>=0.34.0
 sse-starlette>=2.2.1
