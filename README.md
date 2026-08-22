@@ -2,7 +2,7 @@
 title: Codebase History Analyzer
 emoji: 🏛️
 colorFrom: gray
-colorTo: black
+colorTo: indigo
 sdk: gradio
 sdk_version: 4.44.0
 app_file: app.py
